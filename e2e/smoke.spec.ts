@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { E2E_VERSION } from "./env";
+
 // The demo account `pnpm db:seed` creates (db/seed.ts).
 const DEMO_EMAIL = "demo@clerq.local";
 const DEMO_PASSWORD = "clerq-demo";
@@ -16,6 +18,13 @@ test("a signed-out visitor is sent to sign in", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveURL(/\/sign-in/);
   await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
+});
+
+test("/version reports the running version without signing in", async ({ request }) => {
+  const res = await request.get("/version");
+  expect(res.status()).toBe(200);
+  expect(res.headers()["cache-control"]).toBe("no-store");
+  expect(await res.json()).toEqual({ version: E2E_VERSION });
 });
 
 test("wrong password is refused", async ({ page }) => {

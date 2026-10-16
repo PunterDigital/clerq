@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import { E2E_VERSION } from "./e2e/env";
+
 // Browser smoke tests against the production build. Expects a migrated and
 // seeded database (pnpm db:migrate && pnpm db:seed) and a finished
 // `pnpm build`; CI does both before `pnpm test:e2e`. Point DATABASE_URL at a
@@ -35,6 +37,10 @@ export default defineConfig({
         process.env.BETTER_AUTH_SECRET ?? "e2e-only-secret-not-used-anywhere-real",
       // The scheduler and update checker have nothing to do in a smoke test.
       CLERQ_DISABLE_SCHEDULER: "1",
+      // Set at runtime only, never at build time: /version must report it,
+      // which proves the route isn't prerendered. Newer than any release, so
+      // no "update available" banner.
+      CLERQ_VERSION: E2E_VERSION,
     },
   },
 });

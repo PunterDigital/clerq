@@ -7,10 +7,10 @@
 # `latest` tracks the newest stable release only - pre-release tags
 # (v1.2.3-rc1) publish their own tag but never move `latest`.
 #
-# Then it redeploys app.useclerq.net (the DEPLOY_WEBHOOK_URL secret), creates
-# the GitHub Release (notes generated from the merged PRs) and
-# checks the image tag can be pulled anonymously. GitHub-hosted runners only:
-# the repo is public.
+# Then it redeploys app.useclerq.net (the DEPLOY_WEBHOOK_URL secret) and waits
+# for its /version to report the new tag, creates the GitHub Release (notes
+# generated from the merged PRs) and checks the image tag can be pulled
+# anonymously. GitHub-hosted runners only: the repo is public.
 #
 # One-time setup: after the first successful run, set the package visibility to
 # Public under the repo's Packages settings so anonymous pulls work.
@@ -90,16 +90,18 @@ jobs:
           curl -fsS --retry 3 --retry-all-errors --max-time 60 -X POST "$DEPLOY_WEBHOOK_URL" -o /dev/null
           echo "Deploy triggered"
 
-      # The deploy runs asynchronously on the host, so this only catches a
-      # deploy that leaves the site down, not one that has not finished yet.
-      - name: Live site still answers
+      # The deploy runs asynchronously on the host: wait until the live site
+      # reports the version just released (app/version/route.ts).
+      - name: Live site runs the new version
         run: |
-          for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' https://app.useclerq.net/sign-in || true)
-            [ "$code" = "200" ] && { echo "app.useclerq.net is up"; exit 0; }
-            sleep 10
+          want="${GITHUB_REF_NAME#v}"
+          for i in $(seq 1 60); do
+            got=$(curl -fsS --max-time 10 https://app.useclerq.net/version | jq -r .version || true)
+            [ "$got" = "$want" ] && { echo "app.useclerq.net is on $want"; exit 0; }
+            echo "app.useclerq.net reports ${got:-nothing}, waiting for $want"
+            sleep 15
           done
-          echo "app.useclerq.net/sign-in did not return 200 within 5 minutes"; exit 1
+          echo "app.useclerq.net did not report $want within 15 minutes"; exit 1
 
   github-release:
     needs: image
