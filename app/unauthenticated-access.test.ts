@@ -215,6 +215,11 @@ describe("public routes stay reachable without a session", () => {
     );
     expect(res.status).toBe(200);
   });
+
+  it("serves the running version", async () => {
+    const { GET } = await import("@/app/version/route");
+    expect(GET().status).toBe(200);
+  });
 });
 
 // -- Structural coverage: prove the live checks above span the whole tree. ----
@@ -256,12 +261,14 @@ const PROTECTED_ROUTES = [
 // The tRPC entrypoint is public, but every procedure behind it gates on a
 // session (see server/trpc/routers/auth-boundary.test.ts).
 const PER_PROCEDURE_ROUTES = ["api/trpc/[trpc]/route.ts"];
-// Public by design: the Better Auth handler (sign-in/up, OAuth) and the two
-// RFC discovery documents MCP clients read before authenticating.
+// Public by design: the Better Auth handler (sign-in/up, OAuth), the two
+// RFC discovery documents MCP clients read before authenticating, and the
+// running version (no data, used to verify deploys).
 const PUBLIC_ROUTES = [
   "api/auth/[...all]/route.ts",
   ".well-known/oauth-authorization-server/route.ts",
   ".well-known/oauth-protected-resource/route.ts",
+  "version/route.ts",
 ];
 
 describe("every URL in the app is accounted for", () => {
