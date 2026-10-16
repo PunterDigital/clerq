@@ -131,6 +131,12 @@ It's idempotent, so re-running is harmless. Once you're in, grant any other
 admins from System Administration → Users. (Contributors running from a source
 checkout can use `pnpm admin:grant <email>` instead.)
 
+### Check which version is running
+
+`GET /version` returns the running release, e.g. `{"version":"1.4.0"}`
+(`null` for an image built from source). It needs no sign-in, so it works for
+deploy checks and uptime monitors.
+
 ## Local development
 
 Requires Node 24+, pnpm 10+, and a Postgres instance (or use
