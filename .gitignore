@@ -79,3 +79,8 @@ AGENTS.md
 *.swp
 *.swo
 *~
+
+# playwright
+/playwright-report/
+/test-results/
+/blob-report/

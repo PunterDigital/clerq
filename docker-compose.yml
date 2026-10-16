@@ -36,7 +36,9 @@ services:
     # leave it for the latest stable release.
     image: ghcr.io/punterdigital/clerq:${CLERQ_TAG:-latest}
     ports:
-      - "${APP_PORT:-3000}:3000"
+      # Loopback by default, like Postgres above: put a TLS reverse proxy in
+      # front, or set APP_BIND=0.0.0.0 to serve other machines directly.
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-clerq}:${POSTGRES_PASSWORD:-clerq}@postgres:5432/${POSTGRES_DB:-clerq}
       # Change this before exposing the instance anywhere - see .env.example

@@ -7,6 +7,11 @@
 # `latest` tracks the newest stable release only - pre-release tags
 # (v1.2.3-rc1) publish their own tag but never move `latest`.
 #
+# Then it redeploys app.useclerq.net (the DEPLOY_WEBHOOK_URL secret), creates
+# the GitHub Release (notes generated from the merged PRs) and
+# checks the image tag can be pulled anonymously. GitHub-hosted runners only:
+# the repo is public.
+#
 # One-time setup: after the first successful run, set the package visibility to
 # Public under the repo's Packages settings so anonymous pulls work.
 name: Release
@@ -18,7 +23,7 @@ on:
 
 jobs:
   image:
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
@@ -61,3 +66,66 @@ jobs:
             CLERQ_VERSION=${{ steps.meta.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Redeploy the managed cloud (app.useclerq.net) onto the image just pushed.
+  # Stable releases only: a pre-release never moves `latest`, so there is
+  # nothing new for it to pull.
+  deploy:
+    needs: image
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://app.useclerq.net
+    steps:
+      - name: Trigger the deploy webhook
+        env:
+          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DEPLOY_WEBHOOK_URL" ]; then
+            echo "DEPLOY_WEBHOOK_URL is not set"; exit 1
+          fi
+          # -f fails the job on an HTTP error; curl's error message never
+          # includes the URL, and Actions masks the secret anyway.
+          curl -fsS --retry 3 --retry-all-errors --max-time 60 -X POST "$DEPLOY_WEBHOOK_URL" -o /dev/null
+          echo "Deploy triggered"
+
+      # The deploy runs asynchronously on the host, so this only catches a
+      # deploy that leaves the site down, not one that has not finished yet.
+      - name: Live site still answers
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' https://app.useclerq.net/sign-in || true)
+            [ "$code" = "200" ] && { echo "app.useclerq.net is up"; exit 0; }
+            sleep 10
+          done
+          echo "app.useclerq.net/sign-in did not return 200 within 5 minutes"; exit 1
+
+  github-release:
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Create the GitHub Release
+        run: |
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"
+          else
+            prerelease=""
+            case "$TAG" in *-*) prerelease="--prerelease" ;; esac
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --title "$TAG" \
+              --generate-notes --verify-tag $prerelease
+          fi
+
+      - name: Image is pullable anonymously
+        run: |
+          version="${TAG#v}"
+          token=$(curl -fsS "https://ghcr.io/token?scope=repository:punterdigital/clerq:pull" | jq -r .token)
+          curl -fsSI -o /dev/null -H "Authorization: Bearer $token" \
+            -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+            "https://ghcr.io/v2/punterdigital/clerq/manifests/$version" \
+            || { echo "ghcr.io/punterdigital/clerq:$version not found"; exit 1; }

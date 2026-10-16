@@ -11,13 +11,13 @@ import { buildInvoicePdf } from "./invoice-document";
 // every page it parses without it. The invoice is set entirely in the PDF
 // standard fonts, so this is exactly the data it wants; resolving it through
 // the package keeps it working under pnpm's nested layout.
-const standardFontDataUrl = join(
+const standardFontDataUrl = `${join(
   dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json")),
   "standard_fonts",
   // pdfjs concatenates the font's filename onto this, so it has to end in a
-  // separator.
-  "/",
-);
+  // "/" - added outside join(), which turns it into "\" on Windows and pdfjs
+  // then rejects the path.
+)}/`;
 
 // The page margin the document is laid out to (styles.page padding).
 const PAGE_MARGIN = 56;
