@@ -4,7 +4,7 @@
 #   migrations folder).
 # - runner: minimal production image from Next.js standalone output.
 
-FROM node:24-alpine AS base
+FROM node:25-alpine AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 RUN corepack enable
