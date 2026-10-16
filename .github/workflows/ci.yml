@@ -1,5 +1,8 @@
 # The gate, in the exact order CONTRIBUTING.md defines it. Every step must pass;
 # nothing here may be weakened to get a green run.
+#
+# GitHub-hosted runners only: this repo is public, so a self-hosted runner
+# would run code from any fork's pull request on that machine.
 name: CI
 
 on:
@@ -10,9 +13,16 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
   gate:
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -45,7 +55,7 @@ jobs:
   # instance break with it, so CI proves it works
   # against a real Postgres - twice, because it must also be idempotent.
   seed:
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:17-alpine
@@ -53,25 +63,17 @@ jobs:
           POSTGRES_USER: clerq
           POSTGRES_PASSWORD: clerq
           POSTGRES_DB: clerq
+        ports:
+          - 5432:5432
         options: >-
           --health-cmd "pg_isready -U clerq -d clerq"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgresql://clerq:clerq@postgres:5432/clerq
+      DATABASE_URL: postgresql://clerq:clerq@localhost:5432/clerq
       BETTER_AUTH_SECRET: ci-only-secret-not-used-anywhere-real
     steps:
-      # The runner is a container on the host's Docker daemon, so it can't
-      # reach the service through a host-published port ("localhost" is the
-      # runner container's own loopback) and job containers don't work either
-      # (the runner's externals mount resolves against the host filesystem).
-      # Instead, attach the runner container to the job's service network so
-      # the "postgres" alias resolves directly - and detach again at the end
-      # so the runner can tear the network down cleanly.
-      - name: Join the service network
-        run: docker network connect ${{ job.services.postgres.network }} "$(cat /etc/hostname)"
-
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
@@ -96,6 +98,58 @@ jobs:
       - name: Invoice numbering is concurrency-safe
         run: pnpm exec tsx scripts/check-numbering-concurrency.ts
 
-      - name: Leave the service network
-        if: always()
-        run: docker network disconnect ${{ job.services.postgres.network }} "$(cat /etc/hostname)" || true
+  # Browser smoke test of the production build against a seeded Postgres:
+  # sign in as the demo user and walk the core flow (see e2e/).
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: clerq
+          POSTGRES_PASSWORD: clerq
+          POSTGRES_DB: clerq
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U clerq -d clerq"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://clerq:clerq@localhost:5432/clerq
+      BETTER_AUTH_SECRET: ci-only-secret-not-used-anywhere-real
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Apply migrations and seed
+        run: pnpm db:migrate && pnpm db:seed
+
+      - name: Production build
+        run: pnpm build
+
+      - name: E2E
+        run: pnpm test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
