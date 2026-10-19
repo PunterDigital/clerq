@@ -5,6 +5,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    ignore:
+      # better-auth 1.7 moves MCP auth out of core (/mcp/* -> /oauth2/*).
+      # Held at 1.6 until that migration lands as its own change.
+      - dependency-name: better-auth
+        update-types: [version-update:semver-minor, version-update:semver-major]
     groups:
       minor-and-patch:
         update-types: [minor, patch]
