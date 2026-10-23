@@ -41,7 +41,7 @@ jobs:
 
       - name: Image metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/punterdigital/clerq
           # latest=auto: applied to stable releases, skipped for pre-releases.
