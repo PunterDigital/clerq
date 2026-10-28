@@ -4,10 +4,12 @@
 #   migrations folder).
 # - runner: minimal production image from Next.js standalone output.
 
-FROM node:24-alpine AS base
+FROM node:26-alpine AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
-RUN corepack enable
+# Node 25+ no longer ships corepack, so install it from npm. It still reads
+# the pnpm version from package.json's packageManager field.
+RUN npm install -g corepack@0.36.0 && corepack enable
 WORKDIR /app
 
 FROM base AS deps
