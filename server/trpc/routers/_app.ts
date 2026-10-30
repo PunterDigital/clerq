@@ -1,5 +1,6 @@
 import { createTRPCRouter } from "../init";
 import { adminRouter } from "./admin";
+import { apiKeysRouter } from "./api-keys";
 import { businessRouter } from "./business";
 import { clientsRouter } from "./clients";
 import { dashboardRouter } from "./dashboard";
@@ -31,6 +32,7 @@ export const appRouter = createTRPCRouter({
   system: systemRouter,
   admin: adminRouter,
   dataExport: exportRouter,
+  apiKeys: apiKeysRouter,
 });
 
 export type AppRouter = typeof appRouter;

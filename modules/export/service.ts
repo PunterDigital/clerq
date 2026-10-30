@@ -40,6 +40,10 @@ export const EXPORT_EXEMPT_TABLES = [
   // business, and it references a platform admin's user id - not something a
   // tenant's own data export should carry.
   "business_suspension",
+  // API keys are credentials (key hashes plus access scope), not business
+  // data, and are useless outside this instance. An export file is meant to
+  // be carried around; it should not carry anything that grants access.
+  "api_key",
 ] as const;
 
 // One exportable collection: the JSON key it lands under, the schema table it

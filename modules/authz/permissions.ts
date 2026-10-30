@@ -66,6 +66,9 @@ export const PERMISSIONS = [
   // in one file), so it is its own permission rather than folded into
   // settings.view - only owners and admins hold it by default.
   "data.export",
+  // An API key acts as its creator for anyone who holds it, outside the
+  // browser, so minting and revoking keys is owner/admin by default.
+  "apiKeys.manage",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -311,6 +314,12 @@ export const PERMISSION_META: Record<
     label: "Export all data",
     description:
       "Download a complete, portable copy of the business's data - clients, projects, tasks, time, invoices, expenses, team and settings.",
+  },
+  "apiKeys.manage": {
+    group: "Settings",
+    label: "Manage API keys",
+    description:
+      "Create and revoke API keys that let scripts and other apps use the Clerq API as you.",
   },
 };
 
