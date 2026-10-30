@@ -94,13 +94,15 @@ live.
 
 ## What is deliberately excluded
 
-Two business-scoped tables are intentionally left out, because they are not the
-business's own data:
+Three business-scoped tables are intentionally left out, because they are not
+the business's own data:
 
 - `user_active_business` - a per-user UI pointer (which business a user is
   currently viewing), not business data.
 - `business_suspension` - platform moderation state imposed on the business by
   a platform administrator.
+- `api_key` - API key hashes and their access scope. They are credentials for
+  this instance, not data, and an export file should never grant access.
 
 Instance-level infrastructure (auth users/sessions, OAuth tokens, instance
 settings, platform-admin records) is likewise not part of a business export.

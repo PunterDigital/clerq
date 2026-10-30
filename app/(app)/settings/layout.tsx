@@ -35,6 +35,9 @@ export default async function SettingsLayout({
     { href: "/settings/team", label: "Team" },
     // The CSV import wizard lives at /settings/import but belongs to Data.
     { href: "/settings/data", label: "Data", match: ["/settings/import"] },
+    ...(membership?.permissions.has("apiKeys.manage")
+      ? [{ href: "/settings/api", label: "API" } as SettingsTab]
+      : []),
     ...(showSystemTab
       ? [{ href: "/settings/system", label: "System" } as SettingsTab]
       : []),

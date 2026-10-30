@@ -135,6 +135,12 @@ describe("file-download routes refuse anonymous requests", () => {
     );
     expect(res.status).toBe(401);
   });
+
+  it("answers the REST API without an API key with 401", async () => {
+    const { GET } = await import("@/app/api/v1/health/route");
+    const res = await GET(new Request("http://localhost/api/v1/health"));
+    expect(res.status).toBe(401);
+  });
 });
 
 describe("the cron trigger refuses anonymous callers", () => {
@@ -252,6 +258,8 @@ const PROTECTED_ROUTES = [
   "api/expenses/receipts/route.ts",
   "api/export/route.ts",
   "api/mcp/route.ts",
+  // REST API endpoints authenticate with an API key, never a session.
+  "api/v1/health/route.ts",
   // The recurring-invoice cron trigger: token-guarded, not session-gated. It
   // stays disabled (404) until CLERQ_CRON_TOKEN is set, and refuses a wrong or
   // missing bearer token with 401 - never runs the sweep for an anonymous
@@ -269,6 +277,8 @@ const PUBLIC_ROUTES = [
   ".well-known/oauth-authorization-server/route.ts",
   ".well-known/oauth-protected-resource/route.ts",
   "version/route.ts",
+  // The REST API's JSON 404 for paths with no endpoint: serves no data.
+  "api/v1/[...path]/route.ts",
 ];
 
 describe("every URL in the app is accounted for", () => {

@@ -763,3 +763,33 @@ export const activity = pgTable(
     index("activity_client_id_idx").on(table.clientId),
   ],
 );
+
+// Per-business API keys for the REST API (/api/v1) and MCP (/api/mcp). A key
+// belongs to the business it was made in and acts as the member who made it,
+// through the same business-scoped tRPC procedures as the web app. Only the
+// SHA-256 of the key is stored: the plaintext is shown once at creation and
+// never again. key_prefix is the first characters of the key, kept so a
+// person can tell their keys apart in the list. revoked_at is the flag - null
+// means live, mirroring invoice.voidedAt.
+export const apiKey = pgTable(
+  "api_key",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => business.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    scope: text("scope", { enum: ["read", "write"] }).notNull(),
+    keyPrefix: text("key_prefix").notNull(),
+    keyHash: text("key_hash").notNull().unique(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("api_key_business_id_idx").on(table.businessId)],
+);

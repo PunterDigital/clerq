@@ -10,22 +10,37 @@ import {
   isPlatformAdmin,
 } from "@/modules/platform/service";
 import { getAuth, type Session } from "@/server/auth";
-import { getActiveMembership } from "@/server/membership";
+import { getActiveMembership, getMembershipIn } from "@/server/membership";
 
 function suspensionMessage(scope: "account" | "business", reason: string | null): string {
   const subject = scope === "account" ? "Your account" : "This business";
   return reason ? `${subject} has been suspended: ${reason}` : `${subject} has been suspended`;
 }
 
-export const createTRPCContext = async (opts: { headers: Headers }) => {
+// Set when the request was authenticated with an API key rather than a browser
+// session (see server/api-keys.ts). The key pins the business it was made in
+// and limits read-only keys to queries.
+export type ApiKeyPrincipal = {
+  id: string;
+  businessId: string;
+  scope: "read" | "write";
+};
+
+export type TRPCContext = {
+  headers: Headers;
+  session: Session | null;
+  apiKey?: ApiKeyPrincipal;
+};
+
+export const createTRPCContext = async (opts: {
+  headers: Headers;
+}): Promise<TRPCContext> => {
   const session = await getAuth().api.getSession({ headers: opts.headers });
   return {
     headers: opts.headers,
     session: session as Session | null,
   };
 };
-
-export type TRPCContext = Awaited<ReturnType<typeof createTRPCContext>>;
 
 const t = initTRPC.context<TRPCContext>().create({
   transformer: superjson,
@@ -53,7 +68,9 @@ export const createTRPCRouter = t.router;
 export const createCallerFactory = t.createCallerFactory;
 export const publicProcedure = t.procedure;
 
-export const authedProcedure = publicProcedure.use(async ({ ctx, next }) => {
+// A signed-in caller, by browser session or API key. Not exported: an API key
+// may only reach business-scoped procedures (below), never account-level ones.
+const sessionProcedure = publicProcedure.use(async ({ ctx, next, type }) => {
   if (!ctx.session) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in first" });
   }
@@ -66,15 +83,37 @@ export const authedProcedure = publicProcedure.use(async ({ ctx, next }) => {
       message: suspensionMessage("account", suspension.reason),
     });
   }
+  if (ctx.apiKey?.scope === "read" && type !== "query") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "This API key is read-only",
+    });
+  }
   return next({ ctx: { ...ctx, session: ctx.session } });
+});
+
+// Account-level procedures (create or switch a business, accept an invite,
+// platform admin). Browser sessions only: an API key is bound to one business
+// and must not change the account it acts for.
+export const authedProcedure = sessionProcedure.use(({ ctx, next }) => {
+  if (ctx.apiKey) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "API keys can only act inside their business",
+    });
+  }
+  return next({ ctx });
 });
 
 // The tenancy boundary: every business-scoped procedure derives business_id
 // from the caller's active membership, never from client input. The active
 // business is the one the user has switched to (their userActiveBusiness
 // pointer), falling back to their oldest membership - see getActiveMembership.
-export const businessProcedure = authedProcedure.use(async ({ ctx, next }) => {
-  const active = await getActiveMembership(ctx.session.user.id);
+// An API key instead always resolves to the business it was made in.
+export const businessProcedure = sessionProcedure.use(async ({ ctx, next }) => {
+  const active = ctx.apiKey
+    ? await getMembershipIn(ctx.session.user.id, ctx.apiKey.businessId)
+    : await getActiveMembership(ctx.session.user.id);
   if (!active) {
     throw new TRPCError({
       code: "FORBIDDEN",

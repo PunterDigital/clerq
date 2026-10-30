@@ -1,4 +1,8 @@
-import { createCallerFactory, type TRPCContext } from "@/server/trpc/init";
+import {
+  createCallerFactory,
+  type ApiKeyPrincipal,
+  type TRPCContext,
+} from "@/server/trpc/init";
 import { appRouter } from "@/server/trpc/routers/_app";
 import type { Session } from "@/server/auth";
 
@@ -12,14 +16,16 @@ export type ClerqCaller = ReturnType<typeof createClerqCaller>;
 // Build a caller context for a user resolved from an MCP OAuth access token.
 // businessProcedure derives business_id from ctx.session.user.id, so a minimal
 // session carrying the user id is all the procedures need; the rest of the
-// Better Auth session object is never read server-side.
+// Better Auth session object is never read server-side. With an API key the
+// caller is pinned to the key's business and scope (see trpc/init.ts).
 export function mcpContextForUser(
   userId: string,
   headers: Headers,
+  apiKey?: ApiKeyPrincipal,
 ): TRPCContext {
   const session = {
     user: { id: userId },
     session: {},
   } as unknown as Session;
-  return { headers, session };
+  return apiKey ? { headers, session, apiKey } : { headers, session };
 }

@@ -73,6 +73,32 @@ export async function getActiveMembership(
   return resolveMembership(db, membership);
 }
 
+// The user's membership in one named business, ignoring their active-business
+// pointer. API keys resolve through this: a key is bound to the business it was
+// made in, so switching businesses in the web app must not move it. Null when
+// the user no longer belongs there, which stops the key working.
+export async function getMembershipIn(
+  userId: string,
+  businessId: string,
+): Promise<ActiveMembership | null> {
+  const db = getDb();
+  const [membership] = await db
+    .select({
+      id: schema.businessMember.id,
+      businessId: schema.businessMember.businessId,
+      role: schema.businessMember.role,
+      businessRoleId: schema.businessMember.businessRoleId,
+    })
+    .from(schema.businessMember)
+    .where(
+      and(
+        eq(schema.businessMember.userId, userId),
+        eq(schema.businessMember.businessId, businessId),
+      ),
+    );
+  return membership ? resolveMembership(db, membership) : null;
+}
+
 // Layers permissions onto a picked membership row. Split from the selection
 // above so the active-business choice and the permission resolution stay
 // independently testable.
