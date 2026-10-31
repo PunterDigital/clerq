@@ -233,6 +233,17 @@ export function boolParam(url: URL, name: string, fallback = false): boolean {
   throw new ApiError(422, `${name} must be true or false`);
 }
 
+// ?name= as an ISO 8601 date or date-time. Absent is null; unparseable is a 422.
+export function dateParam(url: URL, name: string): Date | null {
+  const value = url.searchParams.get(name);
+  if (value === null) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new ApiError(422, `${name} must be an ISO 8601 date`);
+  }
+  return date;
+}
+
 // An optional ISO 8601 date or date-time field (JSON has no dates). Leaves
 // any other value to the procedure's own validation.
 export function dateField(body: Record<string, unknown>, name: string): void {
