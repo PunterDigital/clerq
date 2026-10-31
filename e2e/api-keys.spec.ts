@@ -229,3 +229,70 @@ test("REST API: a timer started with a key runs in the app, and manual time is l
   const removed = await request.delete(`/api/v1/time-entries/${entryId}`, { headers: as });
   expect(removed.status()).toBe(200);
 });
+
+test("REST API: an invoice made and issued with a key shows in the app, and its PDF link works", async ({
+  request,
+}) => {
+  const key = await createKey("write");
+  const as = { authorization: `Bearer ${key}` };
+  const stamp = Date.now();
+
+  const client = await request.post("/api/v1/clients", {
+    headers: as,
+    data: { name: `Invoice client ${stamp}` },
+  });
+  const clientId = (await client.json()).id;
+  const draft = await request.post("/api/v1/invoices", {
+    headers: as,
+    data: { clientId, currency: "EUR", taxTreatment: "zero_rated" },
+  });
+  expect(draft.status()).toBe(201);
+  const invoiceId = (await draft.json()).id;
+  const line = await request.post(`/api/v1/invoices/${invoiceId}/lines`, {
+    headers: as,
+    data: { description: `API line ${stamp}`, amountMajor: "1234.50" },
+  });
+  expect(line.status()).toBe(201);
+  const issued = await request.post(`/api/v1/invoices/${invoiceId}/issue`, { headers: as });
+  expect(issued.status()).toBe(200);
+  const { number } = await issued.json();
+  expect(number).toBeTruthy();
+
+  // An issued invoice can only be voided, not deleted.
+  const deleted = await request.delete(`/api/v1/invoices/${invoiceId}`, { headers: as });
+  expect(deleted.status()).toBe(409);
+
+  await page.goto(`/invoices/${invoiceId}`);
+  await expect(page.getByText(number).first()).toBeVisible();
+  await expect(page.getByText(`API line ${stamp}`).first()).toBeVisible();
+
+  // The signed link downloads the PDF without a key or a login.
+  const link = await request.get(`/api/v1/invoices/${invoiceId}/pdf-link`, { headers: as });
+  const { url } = await link.json();
+  const pdf = await request.get(url);
+  expect(pdf.status()).toBe(200);
+  expect(pdf.headers()["content-type"]).toContain("application/pdf");
+
+  // A recurring invoice made with the key shows on its page in the app.
+  const schedule = await request.post("/api/v1/recurring-invoices", {
+    headers: as,
+    data: {
+      clientId,
+      name: `API retainer ${stamp}`,
+      currency: "EUR",
+      taxTreatment: "zero_rated",
+      frequency: "monthly",
+      interval: 1,
+      startDate: "2027-03-01",
+      netTermsDays: 30,
+      autoIssue: false,
+      lines: [{ description: "Retainer", amountMajor: "800" }],
+    },
+  });
+  expect(schedule.status()).toBe(201);
+  const scheduleId = (await schedule.json()).id;
+  await page.goto(`/invoices/recurring/${scheduleId}`);
+  await expect(page.getByText(`API retainer ${stamp}`).first()).toBeVisible();
+  const removed = await request.delete(`/api/v1/recurring-invoices/${scheduleId}`, { headers: as });
+  expect(removed.status()).toBe(200);
+});

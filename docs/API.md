@@ -144,3 +144,65 @@ that person's: a key can't start or stop someone else's timer.
 `from` and `to` are ISO 8601 dates or date-times. The entry's frozen internal
 cost (`internalCostMinor`, `internalCostCurrency`) is only included when the
 key's creator may view profit.
+
+## Invoices
+
+Statuses are `draft`, `sent`, `overdue`, `paid` and `void`. Only a draft can be
+changed or deleted; once issued, an invoice can only be marked paid or voided.
+A change the status doesn't allow is a 409.
+
+| Method and path | What it does |
+| --- | --- |
+| `GET /invoices` | List invoices, newest first, with `clientName`. `?status=`, `?clientId=`, `?search=` (number or client name contains) |
+| `POST /invoices` | Create a draft: `clientId`, `currency` and `taxTreatment` (`standard`, `zero_rated`, `reverse_charge`) required; `projectId`, `issueDate`, `dueDate`, `periodStart`, `periodEnd` |
+| `GET /invoices/{id}` | One invoice with its `lines` |
+| `PATCH /invoices/{id}` | Change a draft's `issueDate`, `dueDate`, `periodStart`, `periodEnd` or `notes` |
+| `DELETE /invoices/{id}` | Delete a draft; its time goes back to unbilled. 409 for an issued invoice: void it instead |
+| `POST /invoices/{id}/lines` | Add a fixed-amount line to a draft: `{ "description", "amountMajor": "1500.00" }` |
+| `PATCH /invoices/{id}/lines/{lineId}` | Change a draft line's `description` or `amountMajor`. A new amount replaces its hours x rate breakdown |
+| `DELETE /invoices/{id}/lines/{lineId}` | Remove a draft line; its time goes back to unbilled |
+| `POST /invoices/{id}/generate-from-time` | Fill a draft from the client's unbilled billable time: `grouping` (`person_rate`, `task`, `single`) required; `projectId`, `includeTaskList`, `replace` (regenerate the time lines), `fxRates` |
+| `POST /invoices/{id}/issue` | Number the draft and mark it sent |
+| `POST /invoices/{id}/mark-paid` | Mark a sent or overdue invoice paid |
+| `POST /invoices/{id}/void` | Void a sent or overdue invoice, optionally `{ "reason": "..." }`. It keeps its number; its time goes back to unbilled |
+| `POST /invoices/{id}/duplicate` | Copy any invoice into a new draft |
+| `GET /invoices/{id}/pdf-link` | `{ "url", "invoiceNumber", "expiresInSeconds" }`: a link that downloads the PDF without a key or login, for 15 minutes |
+
+Line amounts are sent as `amountMajor`, a plain decimal string in the
+invoice's currency (`"1500"` or `"1500.00"`), and come back in minor units
+(`totalMinor`). An amount with more decimals than the currency allows is a 422.
+A `standard` invoice needs a standard VAT rate in settings, and a
+`reverse_charge` invoice needs both VAT numbers before it can be issued (409).
+
+`generate-from-time` answers with what it added, or with why nothing was
+added: `nothing_to_bill` (with where the client's time is) or
+`missing_fx_rates` (time priced in other currencies; send `fxRates`, keyed by
+currency, as `{ "rate": "1.17", "source": "manual" }`).
+
+```bash
+curl -X POST https://app.useclerq.net/api/v1/invoices/.../lines \
+  -H "Authorization: Bearer clq_..." -H "Content-Type: application/json" \
+  -d '{"description": "Design work, October", "amountMajor": "1500.00"}'
+```
+
+## Recurring invoices
+
+A recurring invoice (retainer) generates an invoice on a schedule, as a draft
+or issued (`autoIssue`).
+
+| Method and path | What it does |
+| --- | --- |
+| `GET /recurring-invoices` | List schedules with `clientName` and `nextRunAt`. `?status=` (`active`, `paused`, `ended`) |
+| `POST /recurring-invoices` | Create a schedule (fields below) |
+| `GET /recurring-invoices/{id}` | One schedule with its `lines` |
+| `PATCH /recurring-invoices/{id}` | Change the fields sent; `lines` is replaced as a whole list. Invoices already generated don't change |
+| `DELETE /recurring-invoices/{id}` | Delete the schedule. The invoices it generated stay |
+| `GET /recurring-invoices/{id}/invoices` | The invoices it has generated |
+| `POST /recurring-invoices/{id}/status` | `{ "status": "active" \| "paused" \| "ended" }` |
+| `POST /recurring-invoices/{id}/generate` | Generate the next invoice now: `{ "generated", "issued", "error" }`. 409 unless active |
+
+Fields: `clientId`, `name`, `currency`, `taxTreatment`, `frequency` (`weekly`,
+`monthly`, `quarterly`, `yearly`), `interval` (1 to 52), `startDate`,
+`netTermsDays` (0 to 365), `autoIssue` and `lines` (1 to 50 of
+`{ "description", "amountMajor" }`) are required; `projectId`, `endDate`,
+`occurrenceLimit` and `notes` are optional.

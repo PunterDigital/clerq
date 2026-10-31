@@ -37,6 +37,81 @@ function found<T>(row: T | null): T {
 
 const treatmentSchema = z.enum(["standard", "zero_rated", "reverse_charge"]);
 
+// A billing period is a range: both ends together and in order, so a
+// half-set period can never reach the PDF.
+function periodInOrder(v: {
+  periodStart?: Date | null;
+  periodEnd?: Date | null;
+}): boolean {
+  return (
+    (v.periodStart == null) === (v.periodEnd == null) &&
+    (v.periodStart == null || v.periodEnd == null || v.periodStart <= v.periodEnd)
+  );
+}
+
+const periodRule = {
+  message: "Give both billing-period dates, with the start on or before the end",
+  path: ["periodEnd"],
+};
+
+// Exported for the REST API, which parses request bodies with the same
+// schemas so a 422 names the field.
+export const draftInvoiceInputSchema = z
+  .object({
+    clientId: z.string().uuid(),
+    projectId: z.string().uuid().optional(),
+    currency: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{3}$/),
+    taxTreatment: treatmentSchema,
+    issueDate: z.date().nullable().optional(),
+    dueDate: z.date().nullable().optional(),
+    periodStart: z.date().nullable().optional(),
+    periodEnd: z.date().nullable().optional(),
+  })
+  .refine(periodInOrder, periodRule);
+
+const detailsFields = {
+  issueDate: z.date().nullable(),
+  dueDate: z.date().nullable(),
+  periodStart: z.date().nullable(),
+  periodEnd: z.date().nullable(),
+};
+
+export const invoiceDetailsSchema = z
+  .object(detailsFields)
+  .refine(periodInOrder, periodRule);
+
+export const generateFromTimeSchema = z.object({
+  invoiceId: z.string().uuid(),
+  projectId: z.string().uuid().optional(),
+  grouping: z.enum(["person_rate", "task", "single"]),
+  includeTaskList: z.boolean().default(false),
+  // Clear the draft's previously generated lines (releasing their time
+  // back to the pool) and regenerate - the fix for a wrong grouping
+  // choice. Manual fixed-amount lines are untouched.
+  replace: z.boolean().default(false),
+  fxRates: z
+    .record(
+      z.string().regex(/^[A-Z]{3}$/),
+      z.object({
+        rate: z.string().regex(/^\d+(\.\d+)?$/),
+        source: z.enum(["ecb", "manual"]),
+      }),
+    )
+    .optional(),
+});
+
+export const lineInputSchema = z.object({
+  description: z.string().trim().min(1),
+  amountMajor: z
+    .string()
+    .trim()
+    .regex(/^\d+(\.\d+)?$/, "Enter a plain amount like 1500 or 1500.00"),
+});
+
 export const invoicesRouter = createTRPCRouter({
   list: permissionProcedure("invoices.view")
     .input(z.object({ search: z.string().optional() }).optional())
@@ -53,35 +128,7 @@ export const invoicesRouter = createTRPCRouter({
     ),
 
   createDraft: permissionProcedure("invoices.create")
-    .input(
-      z.object({
-        clientId: z.string().uuid(),
-        projectId: z.string().uuid().optional(),
-        currency: z
-          .string()
-          .trim()
-          .toUpperCase()
-          .regex(/^[A-Z]{3}$/),
-        taxTreatment: treatmentSchema,
-        issueDate: z.date().nullable().optional(),
-        dueDate: z.date().nullable().optional(),
-        periodStart: z.date().nullable().optional(),
-        periodEnd: z.date().nullable().optional(),
-      })
-        // A billing period is a range: require both ends together and in
-        // order, so a half-set period can never reach the PDF.
-        .refine(
-          (v) =>
-            (v.periodStart == null) === (v.periodEnd == null) &&
-            (v.periodStart == null ||
-              v.periodEnd == null ||
-              v.periodStart <= v.periodEnd),
-          {
-            message: "Give both billing-period dates, with the start on or before the end",
-            path: ["periodEnd"],
-          },
-        ),
-    )
+    .input(draftInvoiceInputSchema)
     .mutation(async ({ ctx, input }) => {
       // The standard rate comes from tax_config only - the engine fails
       // loud when the treatment needs one and none is configured.
@@ -115,27 +162,7 @@ export const invoicesRouter = createTRPCRouter({
     }),
 
   generateFromTime: permissionProcedure("invoices.edit")
-    .input(
-      z.object({
-        invoiceId: z.string().uuid(),
-        projectId: z.string().uuid().optional(),
-        grouping: z.enum(["person_rate", "task", "single"]),
-        includeTaskList: z.boolean().default(false),
-        // Clear the draft's previously generated lines (releasing their time
-        // back to the pool) and regenerate - the fix for a wrong grouping
-        // choice. Manual fixed-amount lines are untouched.
-        replace: z.boolean().default(false),
-        fxRates: z
-          .record(
-            z.string().regex(/^[A-Z]{3}$/),
-            z.object({
-              rate: z.string().regex(/^\d+(\.\d+)?$/),
-              source: z.enum(["ecb", "manual"]),
-            }),
-          )
-          .optional(),
-      }),
-    )
+    .input(generateFromTimeSchema)
     .mutation(({ ctx, input }) =>
       generateLinesFromUnbilledTime(getDb(), ctx.businessId, input),
     ),
@@ -163,13 +190,7 @@ export const invoicesRouter = createTRPCRouter({
   // Fixed-amount manual line - invoices are dual-purpose, not only
   // generated from time.
   addLine: permissionProcedure("invoices.edit")
-    .input(
-      z.object({
-        invoiceId: z.string().uuid(),
-        description: z.string().trim().min(1),
-        amountMajor: z.string().trim().regex(/^\d+(\.\d+)?$/, "Enter a plain amount like 1500 or 1500.00"),
-      }),
-    )
+    .input(lineInputSchema.extend({ invoiceId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const result = await addManualLine(getDb(), ctx.businessId, input);
       if (!result.ok) {
@@ -188,16 +209,7 @@ export const invoicesRouter = createTRPCRouter({
   // changing the amount drops any derived hours x rate breakdown on the line
   // (see updateInvoiceLine).
   updateLine: permissionProcedure("invoices.edit")
-    .input(
-      z.object({
-        lineId: z.string().uuid(),
-        description: z.string().trim().min(1),
-        amountMajor: z
-          .string()
-          .trim()
-          .regex(/^\d+(\.\d+)?$/, "Enter a plain amount like 1500 or 1500.00"),
-      }),
-    )
+    .input(lineInputSchema.extend({ lineId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const result = await updateInvoiceLine(getDb(), ctx.businessId, input);
       if (!result.ok) {
@@ -218,27 +230,8 @@ export const invoicesRouter = createTRPCRouter({
   updateDetails: permissionProcedure("invoices.edit")
     .input(
       z
-        .object({
-          invoiceId: z.string().uuid(),
-          issueDate: z.date().nullable(),
-          dueDate: z.date().nullable(),
-          periodStart: z.date().nullable(),
-          periodEnd: z.date().nullable(),
-        })
-        // A billing period is a range: both ends together and in order, so a
-        // half-set period can never reach the PDF (mirrors createDraft).
-        .refine(
-          (v) =>
-            (v.periodStart == null) === (v.periodEnd == null) &&
-            (v.periodStart == null ||
-              v.periodEnd == null ||
-              v.periodStart <= v.periodEnd),
-          {
-            message:
-              "Give both billing-period dates, with the start on or before the end",
-            path: ["periodEnd"],
-          },
-        ),
+        .object({ invoiceId: z.string().uuid(), ...detailsFields })
+        .refine(periodInOrder, periodRule),
     )
     .mutation(async ({ ctx, input }) => {
       const updated = await updateInvoiceDetails(

@@ -201,9 +201,21 @@ export function created(body: unknown): Response {
 // The request body as a JSON object. Not JSON is a 400; JSON that isn't an
 // object (an array, a string, null) is a 422.
 export async function readBody(req: Request): Promise<Record<string, unknown>> {
+  return parseBody(await req.text());
+}
+
+// The same for endpoints whose body is optional: no body at all is {}.
+export async function readOptionalBody(
+  req: Request,
+): Promise<Record<string, unknown>> {
+  const text = await req.text();
+  return text.trim() === "" ? {} : parseBody(text);
+}
+
+function parseBody(text: string): Record<string, unknown> {
   let body: unknown;
   try {
-    body = await req.json();
+    body = JSON.parse(text);
   } catch {
     throw new ApiError(400, "The request body must be JSON");
   }

@@ -33,7 +33,9 @@ const lineSchema = z.object({
     .regex(/^\d+(\.\d+)?$/, "Enter a plain amount like 1500 or 1500.00"),
 });
 
-const bodySchema = z
+// Exported for the REST API, which parses bodies with it so a 422 names the
+// field.
+export const recurringBodySchema = z
   .object({
     clientId: z.string().uuid(),
     projectId: z.string().uuid().nullable().optional(),
@@ -60,7 +62,7 @@ const bodySchema = z
     path: ["endDate"],
   });
 
-type Body = z.infer<typeof bodySchema>;
+type Body = z.infer<typeof recurringBodySchema>;
 
 // Turns the wire body into a service ScheduleInput: converts each line's
 // major-unit amount into exact minor units in the schedule currency (rejected,
@@ -133,7 +135,7 @@ export const recurringRouter = createTRPCRouter({
     ),
 
   create: permissionProcedure("invoices.manageRecurring")
-    .input(bodySchema)
+    .input(recurringBodySchema)
     .mutation(async ({ ctx, input }) =>
       found(
         await createSchedule(
@@ -145,7 +147,7 @@ export const recurringRouter = createTRPCRouter({
     ),
 
   update: permissionProcedure("invoices.manageRecurring")
-    .input(z.object({ scheduleId: z.string().uuid(), data: bodySchema }))
+    .input(z.object({ scheduleId: z.string().uuid(), data: recurringBodySchema }))
     .mutation(async ({ ctx, input }) =>
       found(
         await updateSchedule(
