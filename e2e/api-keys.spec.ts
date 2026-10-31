@@ -296,3 +296,37 @@ test("REST API: an invoice made and issued with a key shows in the app, and its 
   const removed = await request.delete(`/api/v1/recurring-invoices/${scheduleId}`, { headers: as });
   expect(removed.status()).toBe(200);
 });
+
+test("REST API: an expense made with a key shows in the app, and can be marked paid", async ({
+  request,
+}) => {
+  const key = await createKey("write");
+  const as = { authorization: `Bearer ${key}` };
+  const description = `API expense ${Date.now()}`;
+
+  const made = await request.post("/api/v1/expenses", {
+    headers: as,
+    data: { description, amountMinor: 1999, currency: "EUR", incurredAt: "2026-10-20", vendor: "API vendor" },
+  });
+  expect(made.status()).toBe(201);
+  const expenseId = (await made.json()).id;
+  const paid = await request.post(`/api/v1/expenses/${expenseId}/status`, {
+    headers: as,
+    data: { status: "paid" },
+  });
+  expect(await paid.json()).toMatchObject({ status: "paid" });
+  const listed = await request.get("/api/v1/expenses?status=paid&from=2026-10-20&to=2026-10-21", {
+    headers: as,
+  });
+  expect((await listed.json()).data).toEqual(
+    expect.arrayContaining([expect.objectContaining({ id: expenseId, description })]),
+  );
+
+  await page.goto("/expenses");
+  await expect(page.getByText(description).first()).toBeVisible();
+
+  const removed = await request.delete(`/api/v1/expenses/${expenseId}`, { headers: as });
+  expect(removed.status()).toBe(200);
+  await page.reload();
+  await expect(page.getByText(description)).toHaveCount(0);
+});
