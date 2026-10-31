@@ -79,7 +79,9 @@ async function expectRedirect(
 }
 
 describe("file-download routes refuse anonymous requests", () => {
-  it("serves no invoice PDF without a session or token", async () => {
+  // The first import of the PDF route loads the PDF renderer, which takes
+  // over 5 s while the rest of the suite runs in parallel.
+  it("serves no invoice PDF without a session or token", { timeout: 30_000 }, async () => {
     const { GET } = await import("@/app/api/invoices/[invoiceId]/pdf/route");
     const res = await GET(
       new Request("http://localhost/api/invoices/inv-1/pdf"),

@@ -206,3 +206,20 @@ Fields: `clientId`, `name`, `currency`, `taxTreatment`, `frequency` (`weekly`,
 `netTermsDays` (0 to 365), `autoIssue` and `lines` (1 to 50 of
 `{ "description", "amountMajor" }`) are required; `projectId`, `endDate`,
 `occurrenceLimit` and `notes` are optional.
+
+## Expenses
+
+| Method and path | What it does |
+| --- | --- |
+| `GET /expenses` | List expenses, newest first. `?status=` (`unpaid`, `paid`), `?from=` and/or `?to=` (`incurredAt` in `[from, to)`), `?search=` (description, vendor or category contains) |
+| `POST /expenses` | Create an expense: `description`, `amountMinor`, `currency` and `incurredAt` required; `vendor`, `category`, `notes` |
+| `GET /expenses/{id}` | One expense |
+| `PATCH /expenses/{id}` | Change the fields sent |
+| `POST /expenses/{id}/status` | `{ "status": "paid" }` or `{ "status": "unpaid" }` |
+| `DELETE /expenses/{id}` | Delete an expense and its receipt |
+
+Receipts aren't part of the API yet: attach or scan them in the app. An
+expense says whether it has one (`receiptFilename`, `receiptMimeType`) but
+the file isn't sent, a `PATCH` keeps it, and a body with `receipt` is a 422.
+Expenses belong to the business, not to a project, so there is no project
+filter.
