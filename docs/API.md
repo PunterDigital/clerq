@@ -124,3 +124,23 @@ curl -X POST https://app.useclerq.net/api/v1/tasks \
   -H "Authorization: Bearer clq_..." -H "Content-Type: application/json" \
   -d '{"projectId": "...", "title": "Write the brief", "estimateMinutes": 90}'
 ```
+
+## Time entries and timers
+
+A key acts as the person who made it, so "my" time and the timer are always
+that person's: a key can't start or stop someone else's timer.
+
+| Method and path | What it does |
+| --- | --- |
+| `GET /time-entries?taskId=` | Everyone's entries on a task, newest first (needs permission to view all time). Add `from` and `to` to limit it to a date range |
+| `GET /time-entries?from=&to=` | The key creator's own finished entries with `startedAt` in `[from, to)`, oldest first, with task, project and client names |
+| `POST /time-entries` | Log a manual entry: `taskId`, `startedAt` and `durationSeconds` (required), `billable` (default `true`), `note`, `rateMinor`, `rateCurrency` |
+| `PATCH /time-entries/{id}` | Change the note: `{ "note": "..." }`, or `null` to clear it |
+| `DELETE /time-entries/{id}` | Delete an entry |
+| `GET /timer` | The running timer: `{ "timer": {...} }`, or `{ "timer": null }` |
+| `POST /timer/start` | Start a timer on a task: `{ "taskId": "..." }`. A running timer is stopped and saved first |
+| `POST /timer/stop` | Stop the running timer: `{ "entry": {...} }`, or `{ "entry": null }` if none was running |
+
+`from` and `to` are ISO 8601 dates or date-times. The entry's frozen internal
+cost (`internalCostMinor`, `internalCostCurrency`) is only included when the
+key's creator may view profit.

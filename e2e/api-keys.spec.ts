@@ -169,3 +169,60 @@ test("REST API: clients, projects and tasks made with a key show up in the app",
   await page.reload();
   await expect(page.getByText(`API task ${stamp}`)).toHaveCount(0);
 });
+
+test("REST API: a timer started with a key runs in the app, and manual time is logged", async ({
+  request,
+}) => {
+  const key = await createKey("write");
+  const as = { authorization: `Bearer ${key}` };
+  const stamp = Date.now();
+
+  const client = await request.post("/api/v1/clients", {
+    headers: as,
+    data: { name: `Timer client ${stamp}` },
+  });
+  const project = await request.post("/api/v1/projects", {
+    headers: as,
+    data: { name: `Timer project ${stamp}`, clientId: (await client.json()).id },
+  });
+  const projectId = (await project.json()).id;
+  const task = await request.post("/api/v1/tasks", {
+    headers: as,
+    data: { projectId, title: `Timer task ${stamp}` },
+  });
+  const taskId = (await task.json()).id;
+
+  const started = await request.post("/api/v1/timer/start", {
+    headers: as,
+    data: { taskId },
+  });
+  expect(started.status()).toBe(201);
+  const running = await request.get("/api/v1/timer", { headers: as });
+  expect((await running.json()).timer).toMatchObject({ taskId });
+
+  // The key acts as the demo user, so the app shows that user's timer running.
+  await page.goto(`/projects/${projectId}`);
+  await expect(page.getByRole("button", { name: "Stop timer" })).toBeVisible();
+
+  const stopped = await request.post("/api/v1/timer/stop", { headers: as });
+  expect((await stopped.json()).entry).toMatchObject({ taskId });
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Start timer on this task" })).toBeVisible();
+
+  const logged = await request.post("/api/v1/time-entries", {
+    headers: as,
+    data: { taskId, startedAt: "2026-01-05T09:00:00Z", durationSeconds: 5400, note: "From the API" },
+  });
+  expect(logged.status()).toBe(201);
+  const entryId = (await logged.json()).id;
+  const january = await request.get("/api/v1/time-entries?from=2026-01-05&to=2026-01-06", {
+    headers: as,
+  });
+  expect((await january.json()).data).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: entryId, note: "From the API", taskTitle: `Timer task ${stamp}` }),
+    ]),
+  );
+  const removed = await request.delete(`/api/v1/time-entries/${entryId}`, { headers: as });
+  expect(removed.status()).toBe(200);
+});
