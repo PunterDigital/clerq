@@ -1,11 +1,10 @@
-import { z } from "zod";
-
 import {
   DRAFT_ONLY,
   INVOICE_DATE_FIELDS,
   invoiceDateFields,
   invoiceIn,
 } from "@/server/api/invoices";
+import { invoiceNotesSchema } from "@/server/api/schemas";
 import { ApiError, apiRoute, idParam, readBody } from "@/server/api/v1";
 import { invoiceDetailsSchema } from "@/server/trpc/routers/invoices";
 
@@ -18,8 +17,6 @@ import { invoiceDetailsSchema } from "@/server/trpc/routers/invoices";
 export const dynamic = "force-dynamic";
 
 type Params = { invoiceId: string };
-
-const notesSchema = z.object({ notes: z.string().max(2000).nullable() });
 
 export const GET = apiRoute<Params>(async (_req, { caller, params }) =>
   caller.invoices.get({ invoiceId: idParam(params.invoiceId, "invoice") }),
@@ -50,7 +47,7 @@ export const PATCH = apiRoute<Params>(async (req, ctx) => {
         ),
       )
     : null;
-  const notes = "notes" in patch ? notesSchema.parse({ notes: patch.notes }).notes : undefined;
+  const notes = "notes" in patch ? invoiceNotesSchema.parse({ notes: patch.notes }).notes : undefined;
 
   if (details) await ctx.caller.invoices.updateDetails({ invoiceId, ...details });
   if (notes !== undefined) {

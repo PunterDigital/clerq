@@ -90,6 +90,42 @@ test("API keys: create one, use it, revoke it", async ({ request }) => {
   expect(revoked.status()).toBe(401);
 });
 
+test("API docs: linked from Settings, and list what the OpenAPI document lists", async ({
+  request,
+}) => {
+  await page.goto("/settings/api");
+  await page.getByRole("link", { name: "API documentation" }).click();
+  await expect(page).toHaveURL(/\/settings\/api\/docs$/);
+  await expect(page.getByText("API documentation", { exact: true })).toBeVisible();
+  for (const section of ["Authentication", "Pagination", "Rate limits", "Errors"]) {
+    await expect(page.getByText(section, { exact: true })).toBeVisible();
+  }
+
+  // The OpenAPI document needs no key, and describes the same endpoints.
+  const res = await request.get("/api/v1/openapi.json");
+  expect(res.status()).toBe(200);
+  const doc = await res.json();
+  expect(doc.openapi).toBe("3.1.0");
+  const operations = Object.values(doc.paths as Record<string, object>).reduce(
+    (n: number, methods) => n + Object.keys(methods).length,
+    0,
+  );
+  const endpoints = page.getByTestId("api-endpoint");
+  await expect(endpoints).toHaveCount(operations);
+  const issue = endpoints.filter({ hasText: "/invoices/{invoiceId}/issue" });
+  await expect(issue).toContainText("Issue a draft");
+  await expect(issue).toContainText("409 when");
+  const createClient = endpoints.filter({ hasText: "Create a client" });
+  await expect(createClient).toContainText("name");
+  await expect(createClient).toContainText("required");
+
+  // Its link on the page opens the same document.
+  await expect(page.getByRole("link", { name: "OpenAPI document" })).toHaveAttribute(
+    "href",
+    "/api/v1/openapi.json",
+  );
+});
+
 async function createKey(scope: "read" | "write"): Promise<string> {
   await page.goto("/settings/api");
   await page.getByLabel("Name").fill(`E2E ${scope} ${Date.now()}`);

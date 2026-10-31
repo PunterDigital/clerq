@@ -1,5 +1,4 @@
-import { z } from "zod";
-
+import { timeEntryNoteBodySchema } from "@/server/api/schemas";
 import { publicEntry } from "@/server/api/time";
 import { apiRoute, idParam, readBody } from "@/server/api/v1";
 
@@ -10,11 +9,9 @@ export const dynamic = "force-dynamic";
 
 type Params = { entryId: string };
 
-const noteSchema = z.object({ note: z.string().nullable() });
-
 export const PATCH = apiRoute<Params>(async (req, ctx) => {
   const entryId = idParam(ctx.params.entryId, "entry");
-  const { note } = noteSchema.parse(await readBody(req));
+  const { note } = timeEntryNoteBodySchema.parse(await readBody(req));
   return publicEntry(await ctx.caller.time.updateNote({ entryId, note }), ctx);
 });
 

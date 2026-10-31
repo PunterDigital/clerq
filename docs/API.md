@@ -2,7 +2,12 @@
 
 Base URL: `https://app.useclerq.net/api/v1` (a self-hosted instance serves the
 same paths on its own host). This page covers what every endpoint shares, then
-lists the endpoints. An OpenAPI file comes in a later release.
+lists the endpoints.
+
+The OpenAPI 3.1 document is at `GET /api/v1/openapi.json` (no key needed). It
+is generated from the same Zod schemas the endpoints parse request bodies
+with, so it always matches what the API accepts. In the app, **Settings -> API
+-> API documentation** shows the same reference.
 
 ## API keys
 
