@@ -83,6 +83,16 @@ export async function listTasks(db: Db, businessId: string, projectId: string) {
   }));
 }
 
+export async function getTask(db: Db, businessId: string, taskId: string) {
+  const [row] = await db
+    .select()
+    .from(schema.task)
+    .where(
+      and(eq(schema.task.businessId, businessId), eq(schema.task.id, taskId)),
+    );
+  return row ?? null;
+}
+
 // Business-wide task search by title, used by the projects page so a search
 // there surfaces matching tasks alongside matching projects. Carries the
 // parent project and client names so a result links back and reads in

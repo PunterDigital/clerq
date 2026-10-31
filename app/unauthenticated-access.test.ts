@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { sep } from "node:path";
 
@@ -140,6 +140,14 @@ describe("file-download routes refuse anonymous requests", () => {
     const { GET } = await import("@/app/api/v1/health/route");
     const res = await GET(new Request("http://localhost/api/v1/health"));
     expect(res.status).toBe(401);
+
+    const clients = await import("@/app/api/v1/clients/route");
+    expect((await clients.GET(new Request("http://localhost/api/v1/clients"))).status).toBe(401);
+    const tasks = await import("@/app/api/v1/tasks/route");
+    const post = await tasks.POST(
+      new Request("http://localhost/api/v1/tasks", { method: "POST", body: "{}" }),
+    );
+    expect(post.status).toBe(401);
   });
 });
 
@@ -258,14 +266,17 @@ const PROTECTED_ROUTES = [
   "api/expenses/receipts/route.ts",
   "api/export/route.ts",
   "api/mcp/route.ts",
-  // REST API endpoints authenticate with an API key, never a session.
-  "api/v1/health/route.ts",
   // The recurring-invoice cron trigger: token-guarded, not session-gated. It
   // stays disabled (404) until CLERQ_CRON_TOKEN is set, and refuses a wrong or
   // missing bearer token with 401 - never runs the sweep for an anonymous
   // caller.
   "api/cron/run/route.ts",
 ];
+// REST API endpoints authenticate with an API key, never a session: every
+// route.ts under api/v1/ (bar the JSON 404 below) must wrap each handler it
+// exports in apiRoute(), which refuses a missing or bad key with 401
+// (asserted live above, and per endpoint in server/api/v1-resources.test.ts).
+const API_KEY_ROUTE_PREFIX = "api/v1/";
 // The tRPC entrypoint is public, but every procedure behind it gates on a
 // session (see server/trpc/routers/auth-boundary.test.ts).
 const PER_PROCEDURE_ROUTES = ["api/trpc/[trpc]/route.ts"];
@@ -311,11 +322,34 @@ describe("every URL in the app is accounted for", () => {
       ...PER_PROCEDURE_ROUTES,
       ...PUBLIC_ROUTES,
     ]);
-    const unclassified = routes.filter((r) => !known.has(r));
+    const unclassified = routes.filter(
+      (r) => !known.has(r) && !r.startsWith(API_KEY_ROUTE_PREFIX),
+    );
     expect(
       unclassified,
       `unclassified routes: ${unclassified.join(", ")}`,
     ).toEqual([]);
+  });
+
+  it("wraps every REST API handler in apiRoute()", () => {
+    const apiRoutes = filesEndingWith("route.ts").filter(
+      (r) => r.startsWith(API_KEY_ROUTE_PREFIX) && !PUBLIC_ROUTES.includes(r),
+    );
+    expect(apiRoutes).toContain("api/v1/health/route.ts");
+    const unwrapped: string[] = [];
+    for (const route of apiRoutes) {
+      const source = readFileSync(appDir + route, "utf8");
+      const handlers = [
+        ...source.matchAll(/export (?:const|async function|function) (GET|HEAD|POST|PUT|PATCH|DELETE)\b(.*)/g),
+      ];
+      expect(handlers.length, `${route} exports no handler`).toBeGreaterThan(0);
+      for (const [, method, rest] of handlers) {
+        if (!/^ = apiRoute(<[^>]*>)?\(/.test(rest)) unwrapped.push(`${route} ${method}`);
+      }
+      // Re-exports (export { x as GET }) would dodge the check above.
+      expect(source, route).not.toMatch(/export \{[^}]*\bas (GET|POST|PUT|PATCH|DELETE)\b/);
+    }
+    expect(unwrapped, `handlers outside apiRoute(): ${unwrapped.join(", ")}`).toEqual([]);
   });
 
   it("exposes no unaccounted receipt URL - receipts live in the gated expense page or the session-gated zip route", () => {
