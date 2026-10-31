@@ -1,6 +1,5 @@
-import { z } from "zod";
-
 import { invoiceIn } from "@/server/api/invoices";
+import { voidInvoiceBodySchema } from "@/server/api/schemas";
 import { apiRoute, idParam, readOptionalBody } from "@/server/api/v1";
 
 // POST /api/v1/invoices/:invoiceId/void - void a sent or overdue invoice,
@@ -8,11 +7,9 @@ import { apiRoute, idParam, readOptionalBody } from "@/server/api/v1";
 // to unbilled. 409 for a draft (delete it), a paid or a void invoice.
 export const dynamic = "force-dynamic";
 
-const voidSchema = z.object({ reason: z.string().trim().max(500).optional() });
-
 export const POST = apiRoute<{ invoiceId: string }>(async (req, ctx) => {
   const invoiceId = idParam(ctx.params.invoiceId, "invoice");
-  const { reason } = voidSchema.parse(await readOptionalBody(req));
+  const { reason } = voidInvoiceBodySchema.parse(await readOptionalBody(req));
   await invoiceIn(
     ctx,
     invoiceId,

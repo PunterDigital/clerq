@@ -37,7 +37,8 @@ type RouteSegment<P> = { params: Promise<P> };
 
 const READ_METHODS = new Set(["GET", "HEAD"]);
 
-const STATUS_BY_CODE: Record<number, string> = {
+// Also lists the codes in the OpenAPI document (server/api/openapi.ts).
+export const ERROR_CODE_BY_STATUS: Record<number, string> = {
   400: "bad_request",
   401: "unauthorized",
   403: "forbidden",
@@ -54,7 +55,7 @@ export function apiError(
   headers?: HeadersInit,
 ): Response {
   return Response.json(
-    { error: { code: STATUS_BY_CODE[status] ?? "error", message } },
+    { error: { code: ERROR_CODE_BY_STATUS[status] ?? "error", message } },
     { status, headers },
   );
 }

@@ -292,6 +292,8 @@ const PUBLIC_ROUTES = [
   "version/route.ts",
   // The REST API's JSON 404 for paths with no endpoint: serves no data.
   "api/v1/[...path]/route.ts",
+  // The REST API's OpenAPI document: describes the endpoints, serves no data.
+  "api/v1/openapi.json/route.ts",
 ];
 
 describe("every URL in the app is accounted for", () => {

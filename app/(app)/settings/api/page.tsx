@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import Link from "next/link";
 
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -8,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { publicOrigin } from "@/server/api/openapi";
 import { getAuth } from "@/server/auth";
 import { getActiveMembership } from "@/server/membership";
 import { caller } from "@/server/trpc/server";
@@ -40,14 +43,7 @@ export default async function ApiSettingsPage() {
     );
   }
 
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "app.useclerq.net";
-  const proto =
-    h.get("x-forwarded-proto") ??
-    (host.startsWith("localhost") || host.startsWith("127.0.0.1")
-      ? "http"
-      : "https");
-  const apiBase = `${proto}://${host}/api/v1`;
+  const apiBase = `${publicOrigin(await headers())}/api/v1`;
 
   const keys = await caller.apiKeys.list();
 
@@ -71,6 +67,11 @@ export default async function ApiSettingsPage() {
             The same key also works with the MCP endpoint at{" "}
             <code>/api/mcp</code>. Each key may make 120 requests a minute.
           </p>
+          <div>
+            <Button variant="outline" asChild>
+              <Link href="/settings/api/docs">API documentation</Link>
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </>
