@@ -201,13 +201,16 @@ test("REST API: a timer started with a key runs in the app, and manual time is l
   expect((await running.json()).timer).toMatchObject({ taskId });
 
   // The key acts as the demo user, so the app shows that user's timer running.
+  // The header's running-timer widget has a "Stop timer" button too: look in
+  // the task's card.
   await page.goto(`/projects/${projectId}`);
-  await expect(page.getByRole("button", { name: "Stop timer" })).toBeVisible();
+  const card = page.getByRole("button", { name: new RegExp(`^Timer task ${stamp}`) });
+  await expect(card.getByLabel("Stop timer")).toBeVisible();
 
   const stopped = await request.post("/api/v1/timer/stop", { headers: as });
   expect((await stopped.json()).entry).toMatchObject({ taskId });
   await page.reload();
-  await expect(page.getByRole("button", { name: "Start timer on this task" })).toBeVisible();
+  await expect(card.getByLabel("Start timer on this task")).toBeVisible();
 
   const logged = await request.post("/api/v1/time-entries", {
     headers: as,
