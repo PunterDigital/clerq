@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import {
   createTask,
   deleteTask,
+  getTask,
   listTasks,
   searchTasks,
   setTaskStatus,
@@ -26,6 +27,12 @@ export const tasksRouter = createTRPCRouter({
   list: permissionProcedure("tasks.view")
     .input(z.object({ projectId: z.string().uuid() }))
     .query(({ ctx, input }) => listTasks(getDb(), ctx.businessId, input.projectId)),
+
+  get: permissionProcedure("tasks.view")
+    .input(z.object({ taskId: z.string().uuid() }))
+    .query(async ({ ctx, input }) =>
+      found(await getTask(getDb(), ctx.businessId, input.taskId)),
+    ),
 
   // Business-wide task search, used by the projects page alongside the
   // project search. Returns [] for an empty term.

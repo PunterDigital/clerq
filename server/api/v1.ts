@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 
 import { getDb } from "@/db";
 import {
@@ -21,14 +21,21 @@ import { getMembershipIn, type ActiveMembership } from "@/server/membership";
 //
 // Errors are always JSON: { "error": { "code": "not_found", "message": "..." } }.
 
-export type ApiContext = {
+export type ApiContext<P = object> = {
   caller: ClerqCaller;
   key: VerifiedApiKey;
   membership: ActiveMembership;
   url: URL;
+  // The route's dynamic segments, e.g. { clientId } for /clients/[clientId].
+  params: P;
 };
 
-type Handler = (req: Request, ctx: ApiContext) => Promise<unknown>;
+type Handler<P> = (req: Request, ctx: ApiContext<P>) => Promise<unknown>;
+
+// What Next passes a route handler as its second argument.
+type RouteSegment<P> = { params: Promise<P> };
+
+const READ_METHODS = new Set(["GET", "HEAD"]);
 
 const STATUS_BY_CODE: Record<number, string> = {
   400: "bad_request",
@@ -79,7 +86,12 @@ const STATUS_BY_TRPC_CODE: Partial<Record<TRPCError["code"], number>> = {
 export function errorResponse(err: unknown): Response {
   if (err instanceof ApiError) return apiError(err.status, err.message);
   if (err instanceof ZodError) {
-    return apiError(422, err.issues[0]?.message ?? "Invalid input");
+    // Thrown by an endpoint parsing the request body, so the issue's path is
+    // the field the caller sent.
+    const issue = err.issues[0];
+    if (!issue) return apiError(422, "Invalid input");
+    const field = issue.path.join(".");
+    return apiError(422, field ? `${field}: ${issue.message}` : issue.message);
   }
   if (err instanceof TRPCError) {
     const status = STATUS_BY_TRPC_CODE[err.code] ?? 500;
@@ -176,13 +188,90 @@ function decodeCursor(cursor: string): number {
   throw new ApiError(422, "cursor is not valid");
 }
 
+// -- Request and response helpers ----------------------------------------------
+
+// A 201 for endpoints that create something.
+export function created(body: unknown): Response {
+  return Response.json(body, {
+    status: 201,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
+
+// The request body as a JSON object. Not JSON is a 400; JSON that isn't an
+// object (an array, a string, null) is a 422.
+export async function readBody(req: Request): Promise<Record<string, unknown>> {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    throw new ApiError(400, "The request body must be JSON");
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    throw new ApiError(422, "The request body must be a JSON object");
+  }
+  return body as Record<string, unknown>;
+}
+
+const uuidSchema = z.string().uuid();
+
+// A record id from the path. Anything that isn't a UUID can't name a record,
+// so it is a 404 like any other missing one, not a validation error.
+export function idParam(value: string, what: string): string {
+  if (!uuidSchema.safeParse(value).success) {
+    throw new ApiError(404, `No such ${what}`);
+  }
+  return value;
+}
+
+// ?name=true|false. Absent gives the fallback; anything else is a 422.
+export function boolParam(url: URL, name: string, fallback = false): boolean {
+  const value = url.searchParams.get(name);
+  if (value === null) return fallback;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new ApiError(422, `${name} must be true or false`);
+}
+
+// An optional ISO 8601 date or date-time field (JSON has no dates). Leaves
+// any other value to the procedure's own validation.
+export function dateField(body: Record<string, unknown>, name: string): void {
+  const value = body[name];
+  if (typeof value !== "string") return;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new ApiError(422, `${name} must be an ISO 8601 date`);
+  }
+  body[name] = date;
+}
+
+// PATCH semantics over the tRPC update procedures, which replace every field:
+// starts from the record's current values for the fields the input schema
+// knows, then applies what the request sent. A field the request leaves out
+// keeps its value; one it sends as null is cleared. Stored nulls become
+// "absent", which the services already store as null.
+export function mergeInput(
+  schema: z.ZodObject,
+  current: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = {};
+  for (const field of Object.keys(schema.shape)) {
+    if (field in patch) merged[field] = patch[field];
+    else if (current[field] !== null && current[field] !== undefined) {
+      merged[field] = current[field];
+    }
+  }
+  return merged;
+}
+
 // -- Route wrapper -------------------------------------------------------------
 
 // Wraps an endpoint: authenticates the bearer key, applies the rate limit,
 // resolves the key's business membership, and turns the handler's return value
 // into a JSON 200 (or passes a Response through).
-export function apiRoute(handler: Handler) {
-  return async (req: Request): Promise<Response> => {
+export function apiRoute<P extends object = object>(handler: Handler<P>) {
+  return async (req: Request, segment?: RouteSegment<P>): Promise<Response> => {
     const token = bearerToken(req.headers);
     if (!token) {
       return apiError(401, "Send an API key as: Authorization: Bearer <key>", {
@@ -207,6 +296,11 @@ export function apiRoute(handler: Handler) {
         ...limitHeaders,
         "Retry-After": String(limit.retryAfterSeconds),
       });
+    }
+    // The tRPC layer refuses mutations for read-only keys too; refusing here
+    // first means a read-only key gets 403 even when its body is also invalid.
+    if (key.scope === "read" && !READ_METHODS.has(req.method)) {
+      return apiError(403, "This API key is read-only", limitHeaders);
     }
 
     const membership = await getMembershipIn(key.userId, key.businessId);
@@ -236,6 +330,7 @@ export function apiRoute(handler: Handler) {
         key,
         membership,
         url: new URL(req.url),
+        params: segment ? await segment.params : ({} as P),
       });
       if (result instanceof Response) {
         for (const [name, value] of Object.entries(limitHeaders)) {

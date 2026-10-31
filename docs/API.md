@@ -1,8 +1,8 @@
 # Clerq REST API
 
 Base URL: `https://app.useclerq.net/api/v1` (a self-hosted instance serves the
-same paths on its own host). The full endpoint reference and an OpenAPI file
-come with the endpoint releases; this page covers what every endpoint shares.
+same paths on its own host). This page covers what every endpoint shares, then
+lists the endpoints. An OpenAPI file comes in a later release.
 
 ## API keys
 
@@ -48,6 +48,7 @@ Errors are JSON with an HTTP status:
 
 | Status | `code` | When |
 | --- | --- | --- |
+| 400 | `bad_request` | The request body isn't JSON |
 | 401 | `unauthorized` | No key, an unknown or revoked key, or its creator left the business |
 | 403 | `forbidden` | The key is read only, or its creator lacks the permission |
 | 404 | `not_found` | No such record, or no such endpoint |
@@ -65,3 +66,61 @@ Errors are JSON with an HTTP status:
 List endpoints return `{ "data": [...], "nextCursor": "..." }`. Pass
 `?limit=` (1 to 200, default 50) and, for the next page, `?cursor=` with the
 previous `nextCursor`. `nextCursor` is `null` on the last page.
+
+## Requests
+
+Send request bodies as JSON objects (`Content-Type: application/json`). A body
+that isn't JSON is a 400; invalid fields are a 422 whose message starts with
+the field, for example `name: Too small: expected string to have >=1 characters`.
+Dates are ISO 8601 strings (`2026-12-01` or `2026-12-01T09:00:00Z`). Money is in
+minor units (cents) with an ISO 4217 currency code.
+
+`POST` that creates something answers 201. `PATCH` changes only the fields you
+send; a field sent as `null` is cleared, and a list (such as a client's
+`contacts`) is replaced as a whole. An id that doesn't exist, belongs to
+another business or isn't a UUID is a 404.
+
+## Clients
+
+| Method and path | What it does |
+| --- | --- |
+| `GET /clients` | List clients, newest first. `?search=` (name contains), `?includeArchived=true` |
+| `POST /clients` | Create a client: `name` (required), `contacts`, `notes`, `address`, `companyNumber`, `vatNumber`, `defaultRateMinor`, `defaultRateCurrency`, `defaultRateUnit` (`hour` or `day`), `budgetMinor`, `budgetCurrency` |
+| `GET /clients/{id}` | One client |
+| `PATCH /clients/{id}` | Change a client's fields |
+| `POST /clients/{id}/archive` | Archive a client |
+| `POST /clients/{id}/unarchive` | Bring an archived client back |
+| `POST /clients/{id}/notes` | Add a note: `{ "text": "..." }` |
+| `GET /clients/{id}/activity` | The client's activity thread (notes, changes, invoices), newest first |
+
+`contacts` is a list of `{ "name", "email"?, "role"? }`.
+
+## Projects
+
+| Method and path | What it does |
+| --- | --- |
+| `GET /projects` | List projects with their client's name. `?clientId=`, `?search=` (project or client name contains) |
+| `POST /projects` | Create a project: `name` and `clientId` (required), `status` (`active`, `on_hold`, `completed`), `dueDate`, `defaultRateMinor`, `defaultRateCurrency`, `defaultRateUnit`, `budgetMinor`, `budgetCurrency` |
+| `GET /projects/{id}` | One project |
+| `PATCH /projects/{id}` | Change a project's fields; `clientId` moves it to another client |
+
+## Tasks
+
+| Method and path | What it does |
+| --- | --- |
+| `GET /tasks?projectId=` | A project's tasks, oldest first, with `trackedSeconds` |
+| `GET /tasks?search=` | Tasks whose title contains the term, across the business, newest first, with `projectName` and `clientName` |
+| `POST /tasks` | Create a task: `projectId` and `title` (required), `status`, `estimateMinutes` |
+| `GET /tasks/{id}` | One task |
+| `PATCH /tasks/{id}` | Change a task's `title`, `status` or `estimateMinutes` |
+| `POST /tasks/{id}/status` | Set only the status: `{ "status": "done" }` |
+| `DELETE /tasks/{id}` | Delete a task and its time entries. 409 while any of its time is on an invoice |
+
+Both task lists take `?status=` (`todo`, `in_progress`, `in_review`, `done`).
+`GET /tasks` needs `projectId` or `search`.
+
+```bash
+curl -X POST https://app.useclerq.net/api/v1/tasks \
+  -H "Authorization: Bearer clq_..." -H "Content-Type: application/json" \
+  -d '{"projectId": "...", "title": "Write the brief", "estimateMinutes": 90}'
+```
