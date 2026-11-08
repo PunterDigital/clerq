@@ -72,10 +72,9 @@ test("bulk upload: scan a batch, review each, save, mark paid and skip", async (
     { name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hi") },
   ]);
 
-  // The text file is refused; the other four are queued and scanned.
-  await expect(page.getByRole("alert")).toContainText(
-    "notes.txt: Not a PNG, JPEG or PDF",
-  );
+  // The text file is refused; the other four are queued and scanned. (Not
+  // getByRole("alert"): Next's route announcer is an alert too.)
+  await expect(page.getByText("notes.txt: Not a PNG, JPEG or PDF")).toBeVisible();
   const files = page.getByRole("list", { name: "Files" });
   await expect(files.getByRole("listitem")).toHaveCount(4);
   await expect(page.getByText("4 of 4 scanned")).toBeVisible({ timeout: 30_000 });
@@ -97,7 +96,7 @@ test("bulk upload: scan a batch, review each, save, mark paid and skip", async (
 
   // 2: the scan failed, so the fields are typed in by hand.
   await expect(page.getByText("Expense 2 of 4")).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText("Could not scan this file");
+  await expect(page.getByText(/Could not scan this file/)).toBeVisible();
   await expect(page.getByLabel("Description")).toHaveValue("");
   await expect(page.getByText("Attaching blurry.png")).toBeVisible();
   await page.getByLabel("Description").fill(byHand);
