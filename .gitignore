@@ -83,4 +83,5 @@ AGENTS.md
 # playwright
 /playwright-report/
 /test-results/
+/playwright/.auth/
 /blob-report/

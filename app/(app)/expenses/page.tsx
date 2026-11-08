@@ -7,6 +7,7 @@ import { ExpenseStatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatDate, formatMoney } from "@/lib/format";
+import { isReceiptScanConfigured } from "@/modules/expenses/ocr";
 import { caller } from "@/server/trpc/server";
 
 import { DownloadReceipts } from "./download-receipts";
@@ -42,6 +43,12 @@ export default async function ExpensesPage({
       <div className="flex items-center gap-4">
         <h1 className="flex-1 text-2xl">Expenses</h1>
         {!isEmptyBusiness && <DownloadReceipts />}
+        {/* Bulk upload reads every file with AI, so it needs scanning set up. */}
+        {isReceiptScanConfigured() ? (
+          <Button variant="outline" asChild>
+            <Link href="/expenses/bulk">Bulk upload</Link>
+          </Button>
+        ) : null}
         <Button asChild>
           <Link href="/expenses/new">New expense</Link>
         </Button>
