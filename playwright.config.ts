@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-import { E2E_VERSION } from "./e2e/env";
+import { E2E_VERSION, OPENROUTER_STUB_PORT } from "./e2e/env";
 
 // Browser smoke tests against the production build. Expects a migrated and
 // seeded database (pnpm db:migrate && pnpm db:seed) and a finished
@@ -22,25 +22,38 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: {
-    // The standalone server the Docker image runs, minus the image: Next
-    // leaves static assets and public/ for the deployer to copy in.
-    command: `node scripts/e2e-server.mjs`,
-    url: `${baseURL}/sign-in`,
-    timeout: 120_000,
-    reuseExistingServer: false,
-    env: {
-      PORT: String(port),
-      HOSTNAME: "127.0.0.1",
-      BETTER_AUTH_URL: baseURL,
-      BETTER_AUTH_SECRET:
-        process.env.BETTER_AUTH_SECRET ?? "e2e-only-secret-not-used-anywhere-real",
-      // The scheduler and update checker have nothing to do in a smoke test.
-      CLERQ_DISABLE_SCHEDULER: "1",
-      // Set at runtime only, never at build time: /version must report it,
-      // which proves the route isn't prerendered. Newer than any release, so
-      // no "update available" banner.
-      CLERQ_VERSION: E2E_VERSION,
+  webServer: [
+    {
+      // Stands in for OpenRouter, so "Scan with AI" (and bulk upload) can be
+      // tested without a key or the network.
+      command: "node e2e/openrouter-stub.mjs",
+      url: `http://127.0.0.1:${OPENROUTER_STUB_PORT}/health`,
+      reuseExistingServer: false,
+      env: { OPENROUTER_STUB_PORT: String(OPENROUTER_STUB_PORT) },
     },
-  },
+    {
+      // The standalone server the Docker image runs, minus the image: Next
+      // leaves static assets and public/ for the deployer to copy in.
+      command: `node scripts/e2e-server.mjs`,
+      url: `${baseURL}/sign-in`,
+      timeout: 120_000,
+      reuseExistingServer: false,
+      env: {
+        PORT: String(port),
+        HOSTNAME: "127.0.0.1",
+        BETTER_AUTH_URL: baseURL,
+        BETTER_AUTH_SECRET:
+          process.env.BETTER_AUTH_SECRET ?? "e2e-only-secret-not-used-anywhere-real",
+        // The scheduler and update checker have nothing to do in a smoke test.
+        CLERQ_DISABLE_SCHEDULER: "1",
+        // Set at runtime only, never at build time: /version must report it,
+        // which proves the route isn't prerendered. Newer than any release, so
+        // no "update available" banner.
+        CLERQ_VERSION: E2E_VERSION,
+        // Receipt scanning on, pointed at the stub above.
+        OPENROUTER_API_KEY: "e2e-stub-key",
+        OPENROUTER_BASE_URL: `http://127.0.0.1:${OPENROUTER_STUB_PORT}/api/v1`,
+      },
+    },
+  ],
 });

@@ -14,6 +14,7 @@ import {
   minorToMajor,
   minorUnitDigits,
 } from "@/modules/billing/currency";
+import type { ReceiptScanResult } from "@/modules/expenses/ocr";
 import { useTRPC } from "@/server/trpc/client";
 
 // Mirror the receipt cap the server enforces, so we can warn before encoding
@@ -40,47 +41,91 @@ export type ExpenseInitial = {
   receiptFilename: string | null;
 };
 
-type NewReceipt = { dataUrl: string; filename: string; mimeType: ReceiptMime };
+export type NewReceipt = {
+  dataUrl: string;
+  filename: string;
+  mimeType: ReceiptMime;
+};
+
+// Review mode, used by bulk upload: the form starts from a scanned receipt
+// (already attached), saves without leaving the page and hands control back
+// to the caller, which moves on to the next file.
+export type ExpenseReview = {
+  // The file to attach, or null when it couldn't be read.
+  receipt: NewReceipt | null;
+  // What the scan read, or null when it failed.
+  prefill: ReceiptScanResult | null;
+  scanError: string | null;
+  // Whether to offer "Mark as paid" (the caller holds expenses.approve).
+  canMarkPaid: boolean;
+  isLast: boolean;
+  onSaved: (result: {
+    expenseId: string;
+    paid: boolean;
+    paidError: string | null;
+  }) => void;
+  onSkip: () => void;
+};
 
 export function ExpenseForm({
   initial,
   defaultCurrency,
   scanEnabled = false,
+  review,
 }: {
   initial?: ExpenseInitial;
   defaultCurrency: string;
   // True when the instance has OpenRouter receipt scanning configured. When
   // false the "Scan with AI" button is never shown.
   scanEnabled?: boolean;
+  review?: ExpenseReview;
 }) {
   const router = useRouter();
   const trpc = useTRPC();
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const [description, setDescription] = useState(initial?.description ?? "");
-  const [currency, setCurrency] = useState(initial?.currency ?? defaultCurrency);
+  const prefill = review?.prefill ?? null;
+  const startCurrency = initial?.currency ?? prefill?.currency ?? defaultCurrency;
+
+  const [description, setDescription] = useState(
+    initial?.description ?? prefill?.description ?? "",
+  );
+  const [currency, setCurrency] = useState(startCurrency);
   const [amount, setAmount] = useState(
-    initial ? minorToMajor(initial.amountMinor, initial.currency) : "",
+    initial
+      ? minorToMajor(initial.amountMinor, initial.currency)
+      : prefill?.amount != null
+        ? prefill.amount.toFixed(minorUnitDigits(startCurrency))
+        : "",
   );
   const [incurredAt, setIncurredAt] = useState(
-    toDateInput(initial?.incurredAt ?? new Date()),
+    // The scan's date is already YYYY-MM-DD - exactly what the input takes.
+    prefill?.date ?? toDateInput(initial?.incurredAt ?? new Date()),
   );
-  const [vendor, setVendor] = useState(initial?.vendor ?? "");
-  const [category, setCategory] = useState(initial?.category ?? "");
-  const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [vendor, setVendor] = useState(initial?.vendor ?? prefill?.vendor ?? "");
+  const [category, setCategory] = useState(
+    initial?.category ?? prefill?.category ?? "",
+  );
+  const [notes, setNotes] = useState(initial?.notes ?? prefill?.notes ?? "");
+  const [markPaid, setMarkPaid] = useState(false);
 
   // Receipt state machine: "keep" (untouched), a new file, or "remove".
-  const [receipt, setReceipt] = useState<NewReceipt | "keep" | "remove">("keep");
+  const [receipt, setReceipt] = useState<NewReceipt | "keep" | "remove">(
+    review?.receipt ?? "keep",
+  );
   const [receiptError, setReceiptError] = useState<string | null>(null);
 
   const create = useMutation(
     trpc.expenses.create.mutationOptions({
       onSuccess: (created) => {
+        // Review mode saves in place; the caller moves on (see submit).
+        if (review) return;
         router.push(`/expenses/${created.id}`);
         router.refresh();
       },
     }),
   );
+  const setStatus = useMutation(trpc.expenses.setStatus.mutationOptions());
   const update = useMutation(
     trpc.expenses.update.mutationOptions({
       onSuccess: () => {
@@ -199,9 +244,35 @@ export function ExpenseForm({
     };
     if (initial) {
       update.mutate({ expenseId: initial.id, data });
+    } else if (review) {
+      void saveForReview(data);
     } else {
       create.mutate(data);
     }
+  }
+
+  // Review mode: create, then mark paid if asked. A failed create stays on
+  // this item (the error shows below the form); a failed "mark paid" still
+  // counts as saved, and the caller reports it at the end.
+  async function saveForReview(data: Parameters<typeof create.mutate>[0]) {
+    if (!review) return;
+    let expenseId: string;
+    try {
+      expenseId = (await create.mutateAsync(data)).id;
+    } catch {
+      return;
+    }
+    let paidError: string | null = null;
+    const paid = review.canMarkPaid && markPaid;
+    if (paid) {
+      try {
+        await setStatus.mutateAsync({ expenseId, status: "paid" });
+      } catch (error) {
+        paidError =
+          error instanceof Error ? error.message : "Could not mark it paid";
+      }
+    }
+    review.onSaved({ expenseId, paid, paidError });
   }
 
   const pickedFilename =
@@ -374,6 +445,15 @@ export function ExpenseForm({
                   <p role="alert" className="text-sm text-destructive">
                     {convertError}
                   </p>
+                ) : review && scan.isIdle && review.prefill ? (
+                  <p role="status" className="text-sm text-muted-foreground">
+                    Fields filled in from the receipt - check them before saving.
+                  </p>
+                ) : review && scan.isIdle && review.scanError ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    Could not scan this file ({review.scanError}). Fill in the
+                    details by hand, or try scanning again.
+                  </p>
                 ) : scan.isSuccess ? (
                   <p role="status" className="text-sm text-muted-foreground">
                     Fields filled in from the receipt - check them before saving.
@@ -403,29 +483,69 @@ export function ExpenseForm({
             />
           </div>
 
+          {review?.canMarkPaid ? (
+            <label className="flex items-center gap-3 text-sm">
+              <input
+                type="checkbox"
+                checked={markPaid}
+                onChange={(e) => setMarkPaid(e.target.checked)}
+                className="size-4"
+              />
+              Mark as paid
+            </label>
+          ) : null}
+
           {mutation.error ? (
             <p role="alert" className="text-sm text-destructive">
               {mutation.error.message}
             </p>
           ) : null}
 
-          <div className="flex gap-2">
-            <Button
-              type="submit"
-              disabled={mutation.isPending || !amountOk || !currencyOk}
-            >
-              {initial
-                ? mutation.isPending
+          {review ? (
+            <div className="flex gap-2">
+              <Button
+                type="submit"
+                disabled={
+                  create.isPending ||
+                  setStatus.isPending ||
+                  !amountOk ||
+                  !currencyOk
+                }
+              >
+                {create.isPending || setStatus.isPending
                   ? "Saving..."
-                  : "Save changes"
-                : mutation.isPending
-                  ? "Adding..."
-                  : "Add expense"}
-            </Button>
-            <Button type="button" variant="ghost" onClick={() => router.back()}>
-              Cancel
-            </Button>
-          </div>
+                  : review.isLast
+                    ? "Save and finish"
+                    : "Save and next"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={create.isPending || setStatus.isPending}
+                onClick={review.onSkip}
+              >
+                Skip
+              </Button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button
+                type="submit"
+                disabled={mutation.isPending || !amountOk || !currencyOk}
+              >
+                {initial
+                  ? mutation.isPending
+                    ? "Saving..."
+                    : "Save changes"
+                  : mutation.isPending
+                    ? "Adding..."
+                    : "Add expense"}
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => router.back()}>
+                Cancel
+              </Button>
+            </div>
+          )}
         </form>
       </CardContent>
     </Card>
