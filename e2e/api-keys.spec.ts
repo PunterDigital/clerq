@@ -1,28 +1,20 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// The demo account `pnpm db:seed` creates (db/seed.ts); it owns its business.
-const DEMO_EMAIL = "demo@clerq.local";
-const DEMO_PASSWORD = "clerq-demo";
+import { DEMO_STATE } from "./env";
 
-async function signIn(page: Page) {
-  await page.goto("/sign-in");
-  await page.getByLabel("Email").fill(DEMO_EMAIL);
-  await page.getByLabel("Password").fill(DEMO_PASSWORD);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).not.toHaveURL(/\/sign-in/);
-}
-
-// The tests share one signed-in page: Better Auth allows 3 sign-ins per 10
-// seconds per IP in production builds, and the smoke spec signs in right after.
+// The tests share one page, signed in with the session e2e/auth.setup.ts
+// saved: Better Auth allows 3 sign-ins per 10 seconds per IP in production
+// builds, and the smoke spec signs in twice right after.
 test.describe.configure({ mode: "serial" });
 
 let page: Page;
 const errors: string[] = [];
 
 test.beforeAll(async ({ browser }) => {
-  page = await browser.newPage();
+  page = await browser.newPage({ storageState: DEMO_STATE });
   page.on("pageerror", (error) => errors.push(error.message));
-  await signIn(page);
+  await page.goto("/");
+  await expect(page).not.toHaveURL(/\/sign-in/);
 });
 
 test.afterAll(async () => {

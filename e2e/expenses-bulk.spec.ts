@@ -1,19 +1,13 @@
 import { readFileSync } from "node:fs";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
-// The demo account `pnpm db:seed` creates (db/seed.ts), an owner of the
-// seeded business, so it may also mark expenses paid.
-const DEMO_EMAIL = "demo@clerq.local";
-const DEMO_PASSWORD = "clerq-demo";
+import { DEMO_STATE } from "./env";
 
-async function signIn(page: Page) {
-  await page.goto("/sign-in");
-  await page.getByLabel("Email").fill(DEMO_EMAIL);
-  await page.getByLabel("Password").fill(DEMO_PASSWORD);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).not.toHaveURL(/\/sign-in/);
-}
+// Signed in as the demo account (an owner, so it may also mark expenses
+// paid) with the session e2e/auth.setup.ts saved: no extra sign-in, which
+// Better Auth rate-limits to 3 per 10 seconds per IP.
+test.use({ storageState: DEMO_STATE });
 
 // A 1x1 PNG. The OpenRouter stub (e2e/openrouter-stub.mjs) reads a marker
 // appended after IEND - browsers ignore trailing bytes - and answers with it.
@@ -41,7 +35,6 @@ test("bulk upload: scan a batch, review each, save, mark paid and skip", async (
   const byHand = `Typed by hand ${run}`;
   const fromPdf = `Office chairs ${run}`;
 
-  await signIn(page);
   await page.goto("/expenses");
   await page.getByRole("link", { name: "Bulk upload" }).click();
   await expect(page.getByRole("heading", { name: "Bulk upload" })).toBeVisible();
