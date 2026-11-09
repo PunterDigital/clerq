@@ -2,6 +2,7 @@ import { Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { ExpenseTagChip, tagToneClasses } from "@/components/expense-tag-chip";
 import { SearchBar } from "@/components/search-bar";
 import { ExpenseStatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
@@ -24,24 +25,59 @@ const filters = [
   { key: "paid", label: "Paid", status: "paid" },
 ] as const;
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// The list's URL: status, search and the selected tags (one `tag` param
+// each), so every filter survives a reload and composes with the others.
+function expensesHref(opts: {
+  status?: string;
+  search?: string;
+  tagIds: string[];
+}) {
+  const params = new URLSearchParams();
+  if (opts.status) params.set("status", opts.status);
+  if (opts.search) params.set("q", opts.search);
+  for (const id of opts.tagIds) params.append("tag", id);
+  const query = params.toString();
+  return query ? `/expenses?${query}` : "/expenses";
+}
+
 export default async function ExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; tag?: string | string[] }>;
 }) {
-  const { status, q } = await searchParams;
+  const { status, q, tag } = await searchParams;
   const active = status === "unpaid" || status === "paid" ? status : undefined;
   const search = q?.trim() || undefined;
-  const expenses = await caller.expenses.list({ status: active, search });
+  const { tags: allTags } = await caller.expenses.tags.list();
+  // Only this business's tags count; a stale or foreign id in the URL is
+  // dropped rather than filtering everything out.
+  const known = new Set(allTags.map((t) => t.id));
+  const tagIds = [
+    ...new Set((Array.isArray(tag) ? tag : tag ? [tag] : []).filter((id) => UUID.test(id))),
+  ].filter((id) => known.has(id));
+  const expenses = await caller.expenses.list({
+    status: active,
+    search,
+    tagIds: tagIds.length > 0 ? tagIds : undefined,
+  });
+  const selectedTags = allTags.filter((t) => tagIds.includes(t.id));
 
   // With nothing recorded and no filter or search, this is a first-run
   // business: show the onboarding empty state instead of the search UI.
-  const isEmptyBusiness = expenses.length === 0 && !active && !search;
+  const isEmptyBusiness =
+    expenses.length === 0 && !active && !search && tagIds.length === 0;
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-4">
         <h1 className="flex-1 text-2xl">Expenses</h1>
+        {!isEmptyBusiness && (
+          <Button variant="outline" asChild>
+            <Link href="/expenses/tags">Tags</Link>
+          </Button>
+        )}
         {!isEmptyBusiness && <DownloadReceipts />}
         {/* Bulk upload reads every file with AI, so it needs scanning set up. */}
         {isReceiptScanConfigured() ? (
@@ -76,14 +112,10 @@ export default async function ExpensesPage({
             <div className="flex gap-1.5">
               {filters.map((f) => {
                 const isActive = (active ?? "all") === f.key;
-                const params = new URLSearchParams();
-                if (f.status) params.set("status", f.status);
-                if (search) params.set("q", search);
-                const query = params.toString();
                 return (
                   <Link
                     key={f.key}
-                    href={query ? `/expenses?${query}` : "/expenses"}
+                    href={expensesHref({ status: f.status, search, tagIds })}
                     aria-current={isActive ? "true" : undefined}
                     className={cn(
                       "rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
@@ -102,11 +134,51 @@ export default async function ExpensesPage({
             />
           </div>
 
+          {allTags.length > 0 ? (
+            <nav
+              aria-label="Filter by tag"
+              className="flex flex-wrap items-center gap-1.5"
+            >
+              <span className="mr-1 text-sm text-muted-foreground">Tags</span>
+              {allTags.map((t) => {
+                const on = tagIds.includes(t.id);
+                const next = on
+                  ? tagIds.filter((id) => id !== t.id)
+                  : [...tagIds, t.id];
+                return (
+                  <Link
+                    key={t.id}
+                    href={expensesHref({ status: active, search, tagIds: next })}
+                    aria-current={on ? "true" : undefined}
+                    className={cn(
+                      "rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors",
+                      on
+                        ? cn("border-transparent", tagToneClasses[t.color])
+                        : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    {t.name}
+                  </Link>
+                );
+              })}
+              {tagIds.length > 0 ? (
+                <Link
+                  href={expensesHref({ status: active, search, tagIds: [] })}
+                  className="ml-1 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                  Clear tags
+                </Link>
+              ) : null}
+            </nav>
+          ) : null}
+
           {expenses.length === 0 ? (
             <div className="rounded-lg border bg-card px-8 py-12 text-center text-sm text-muted-foreground shadow-sm">
               {search
                 ? `No expenses match "${search}"`
-                : `No ${active} expenses`}
+                : selectedTags.length > 0
+                  ? `No ${active ? `${active} ` : ""}expenses tagged ${selectedTags.map((t) => t.name).join(" or ")}`
+                  : `No ${active} expenses`}
             </div>
           ) : (
             <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
@@ -130,6 +202,13 @@ export default async function ExpensesPage({
                         .join(" · ")}
                     </div>
                   </div>
+                  {expense.tags.length > 0 ? (
+                    <div className="hidden max-w-64 flex-wrap justify-end gap-1 sm:flex">
+                      {expense.tags.map((t) => (
+                        <ExpenseTagChip key={t.id} name={t.name} color={t.color} />
+                      ))}
+                    </div>
+                  ) : null}
                   <ExpenseStatusPill status={expense.status} />
                   <span className="w-28 shrink-0 text-right text-sm font-medium tabular-nums">
                     {formatMoney(expense.amountMinor, expense.currency)}

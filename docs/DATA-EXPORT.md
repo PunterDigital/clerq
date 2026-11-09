@@ -43,6 +43,8 @@ A single JSON object. The current `formatVersion` is `1`.
     "invoiceSchedules":     [ … ],
     "invoiceScheduleLines": [ … ],
     "expenses":          [ … ],
+    "expenseTags":       [ … ],
+    "expenseTagLinks":   [ … ],
     "activity":          [ … ],
     "members":           [ … ],
     "roles":             [ … ],
@@ -70,6 +72,8 @@ encodings match the schema:
 | `invoiceSchedules`     | `invoice_schedule`         | Recurring-invoice (retainer) templates and cadence.                   |
 | `invoiceScheduleLines` | `invoice_schedule_line`    | Ordered by schedule, then `position`.                                 |
 | `expenses`          | `expense`                     | Includes the inline receipt (`receiptDataUrl`) when present.          |
+| `expenseTags`       | `expense_tag`                 | The business's expense tags (name, colour).                           |
+| `expenseTagLinks`   | `expense_tag_link`            | Which expense carries which tag (`expenseId`, `tagId`).               |
 | `activity`          | `activity`                    | The client activity thread, in insertion order.                       |
 | `members`           | `business_member` + `user`    | Enriched with each member's `email` and `name`.                       |
 | `roles`             | `business_role`               | Custom, business-defined roles.                                       |

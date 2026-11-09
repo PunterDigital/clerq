@@ -47,6 +47,7 @@ export const PERMISSIONS = [
   "expenses.edit",
   "expenses.approve",
   "expenses.delete",
+  "expenses.manageTags",
   // Insights
   "dashboard.view",
   // Reports
@@ -256,6 +257,11 @@ export const PERMISSION_META: Record<
     group: "Expenses",
     label: "Delete expenses",
     description: "Remove expenses.",
+  },
+  "expenses.manageTags": {
+    group: "Expenses",
+    label: "Manage expense tags",
+    description: "Rename, recolour and delete the business's expense tags.",
   },
   "dashboard.view": {
     group: "Insights",

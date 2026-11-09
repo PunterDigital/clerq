@@ -216,8 +216,8 @@ Fields: `clientId`, `name`, `currency`, `taxTreatment`, `frequency` (`weekly`,
 
 | Method and path | What it does |
 | --- | --- |
-| `GET /expenses` | List expenses, newest first. `?status=` (`unpaid`, `paid`), `?from=` and/or `?to=` (`incurredAt` in `[from, to)`), `?search=` (description, vendor or category contains) |
-| `POST /expenses` | Create an expense: `description`, `amountMinor`, `currency` and `incurredAt` required; `vendor`, `category`, `notes` |
+| `GET /expenses` | List expenses, newest first. `?status=` (`unpaid`, `paid`), `?from=` and/or `?to=` (`incurredAt` in `[from, to)`), `?search=` (description, vendor or category contains), `?tag=` (a tag id, repeatable: carrying any) |
+| `POST /expenses` | Create an expense: `description`, `amountMinor`, `currency` and `incurredAt` required; `vendor`, `category`, `notes`, `tagIds` (tag ids; tags are managed in the app) |
 | `GET /expenses/{id}` | One expense |
 | `PATCH /expenses/{id}` | Change the fields sent |
 | `POST /expenses/{id}/status` | `{ "status": "paid" }` or `{ "status": "unpaid" }` |

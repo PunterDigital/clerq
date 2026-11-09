@@ -149,6 +149,8 @@ const PROBES: Record<Permission, (c: Caller) => Promise<unknown>> = {
   "expenses.approve": (c) =>
     c.expenses.setStatus({ expenseId: randomUUID(), status: "paid" }),
   "expenses.delete": (c) => c.expenses.delete({ expenseId: randomUUID() }),
+  "expenses.manageTags": (c) =>
+    c.expenses.tags.delete({ tagId: randomUUID() }),
   "dashboard.view": (c) => c.dashboard.summary(),
   "reports.viewProfit": (c) => c.reports.profit(),
   "team.view": (c) => c.team.list(),

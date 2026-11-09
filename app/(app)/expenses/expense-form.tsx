@@ -17,6 +17,8 @@ import {
 import type { ReceiptScanResult } from "@/modules/expenses/ocr";
 import { useTRPC } from "@/server/trpc/client";
 
+import { TagPicker } from "./tag-picker";
+
 // Mirror the receipt cap the server enforces, so we can warn before encoding
 // rather than after a rejected mutation.
 const MAX_RECEIPT_BYTES = 1_500_000;
@@ -39,6 +41,7 @@ export type ExpenseInitial = {
   incurredAt: Date;
   notes: string | null;
   receiptFilename: string | null;
+  tagIds: string[];
 };
 
 export type NewReceipt = {
@@ -107,6 +110,7 @@ export function ExpenseForm({
     initial?.category ?? prefill?.category ?? "",
   );
   const [notes, setNotes] = useState(initial?.notes ?? prefill?.notes ?? "");
+  const [tagIds, setTagIds] = useState<string[]>(initial?.tagIds ?? []);
   const [markPaid, setMarkPaid] = useState(false);
 
   // Receipt state machine: "keep" (untouched), a new file, or "remove".
@@ -241,6 +245,7 @@ export function ExpenseForm({
       incurredAt: new Date(`${incurredAt}T00:00:00`),
       notes: notes.trim() || null,
       receipt: receiptInput(),
+      tagIds,
     };
     if (initial) {
       update.mutate({ expenseId: initial.id, data });
@@ -365,6 +370,11 @@ export function ExpenseForm({
                 onChange={(e) => setCategory(e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label id="tags-label">Tags (optional)</Label>
+            <TagPicker value={tagIds} onChange={setTagIds} />
           </div>
 
           <div className="flex flex-col gap-2">

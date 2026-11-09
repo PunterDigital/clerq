@@ -485,6 +485,11 @@ export const API_OPERATIONS: ApiOperation[] = [
       from: { schema: isoDate, description: "incurredAt on or after this ISO 8601 date." },
       to: { schema: isoDate, description: "incurredAt before this ISO 8601 date." },
       search: search("expenses whose description, vendor or category is"),
+      tag: {
+        schema: uuid,
+        description:
+          "Only expenses carrying this tag (a tag id). Repeat it to match any of several tags.",
+      },
     },
   },
   {

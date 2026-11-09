@@ -1083,21 +1083,57 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
   );
 
   // --- Expenses -----------------------------------------------------------
+  // Tags travel as names (matched ignoring case); the tools turn them into ids.
+  const tagNames = z
+    .array(z.string().min(1).max(50))
+    .max(20)
+    .optional()
+    .describe("Tag names, matched ignoring case. Unknown names are created.");
+
   server.registerTool(
     "list_expenses",
     {
       title: "List expenses",
       description:
-        "List business expenses, optionally filtered to paid or unpaid. Receipt files are omitted from the list.",
+        "List business expenses with their tags, optionally filtered to paid or unpaid and to expenses carrying any of the given tags. Receipt files are omitted from the list.",
       inputSchema: {
         status: z
           .enum(["unpaid", "paid"])
           .optional()
           .describe("Filter to expenses with this status."),
+        tags: z
+          .array(z.string().min(1))
+          .optional()
+          .describe(
+            "Only expenses carrying any of these tag names (ignoring case). Names that don't exist match nothing.",
+          ),
       },
     },
-    ({ status }) =>
-      runTool(async () => toolJson(await caller.expenses.list({ status }))),
+    ({ status, tags }) =>
+      runTool(async () => {
+        if (!tags || tags.length === 0) {
+          return toolJson(await caller.expenses.list({ status }));
+        }
+        const wanted = new Set(tags.map((name) => name.trim().toLowerCase()));
+        const { tags: all } = await caller.expenses.tags.list();
+        const tagIds = all
+          .filter((tag) => wanted.has(tag.name.toLowerCase()))
+          .map((tag) => tag.id);
+        if (tagIds.length === 0) return toolJson([]);
+        return toolJson(await caller.expenses.list({ status, tagIds }));
+      }),
+  );
+
+  server.registerTool(
+    "list_expense_tags",
+    {
+      title: "List expense tags",
+      description:
+        "List the business's expense tags (name, colour) with how many expenses carry each.",
+      inputSchema: {},
+    },
+    () =>
+      runTool(async () => toolJson((await caller.expenses.tags.list()).tags)),
   );
 
   server.registerTool(
@@ -1134,17 +1170,63 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
           .datetime()
           .describe(`Date the cost was incurred. ${ISO}`),
         notes: z.string().nullable().optional(),
+        tags: tagNames,
       },
     },
-    ({ incurredAt, ...rest }) =>
-      runTool(async () =>
-        toolJson(
+    ({ incurredAt, tags, ...rest }) =>
+      runTool(async () => {
+        const tagIds =
+          tags && tags.length > 0
+            ? (await caller.expenses.tags.ensure({ names: tags })).map((t) => t.id)
+            : undefined;
+        return toolJson(
           await caller.expenses.create({
             ...rest,
             incurredAt: new Date(incurredAt),
+            tagIds,
           }),
+        );
+      }),
+  );
+
+  server.registerTool(
+    "set_expense_tags",
+    {
+      title: "Set expense tags",
+      description:
+        "Replace an expense's tags with exactly these names (an empty list removes them all). Unknown names are created. Nothing else on the expense changes.",
+      inputSchema: {
+        expenseId: z.string().uuid(),
+        tags: z.array(z.string().min(1).max(50)).max(20).describe(
+          "Tag names, matched ignoring case. Unknown names are created.",
         ),
-      ),
+      },
+    },
+    ({ expenseId, tags }) =>
+      runTool(async () => {
+        const expense = await caller.expenses.get({ expenseId });
+        const tagIds =
+          tags.length > 0
+            ? (await caller.expenses.tags.ensure({ names: tags })).map((t) => t.id)
+            : [];
+        // update replaces every field, so send the stored ones back; leaving
+        // receipt out keeps the receipt.
+        await caller.expenses.update({
+          expenseId,
+          data: {
+            description: expense.description,
+            amountMinor: expense.amountMinor,
+            currency: expense.currency,
+            vendor: expense.vendor,
+            category: expense.category,
+            incurredAt: expense.incurredAt,
+            notes: expense.notes,
+            tagIds,
+          },
+        });
+        const { receiptDataUrl, ...rest } = await caller.expenses.get({ expenseId });
+        return toolJson({ ...rest, hasReceipt: Boolean(receiptDataUrl) });
+      }),
   );
 
   server.registerTool(

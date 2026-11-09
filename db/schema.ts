@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   bigserial,
   boolean,
@@ -5,9 +6,11 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -417,6 +420,54 @@ export const expense = pgTable(
     ...timestamps,
   },
   (table) => [index("expense_business_id_idx").on(table.businessId)],
+);
+
+// Tags a business puts on its expenses (#4395). Names are unique per business
+// ignoring case; colour is one of the design system's tag tones (see
+// modules/expenses/tags.ts), never a free-form hex. The free-text
+// expense.category stays as it is - tags sit alongside it.
+export const expenseTag = pgTable(
+  "expense_tag",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => business.id),
+    name: text("name").notNull(),
+    color: text("color").notNull().default("gray"),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex("expense_tag_business_name_idx").on(
+      table.businessId,
+      sql`lower(${table.name})`,
+    ),
+  ],
+);
+
+// Which tags an expense carries. Deleting a tag or an expense removes its
+// links, never the other side. business_id is denormalised for the tenancy
+// convention and the data export.
+export const expenseTagLink = pgTable(
+  "expense_tag_link",
+  {
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => business.id),
+    expenseId: uuid("expense_id")
+      .notNull()
+      .references(() => expense.id, { onDelete: "cascade" }),
+    tagId: uuid("tag_id")
+      .notNull()
+      .references(() => expenseTag.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.expenseId, table.tagId] }),
+    index("expense_tag_link_tag_id_idx").on(table.tagId),
+  ],
 );
 
 // Invitations to join a business. Membership itself lives in

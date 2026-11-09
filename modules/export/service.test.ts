@@ -209,6 +209,15 @@ async function seedFullBusiness(
     })
     .returning();
 
+  const [expenseTag] = await db
+    .insert(schema.expenseTag)
+    .values({ businessId: biz.id, name: `${slug} tag`, color: "teal" })
+    .returning();
+
+  await db
+    .insert(schema.expenseTagLink)
+    .values({ businessId: biz.id, expenseId: expense.id, tagId: expenseTag.id });
+
   const [activity] = await db
     .insert(schema.activity)
     .values({
@@ -244,6 +253,8 @@ async function seedFullBusiness(
       invoiceSchedule.id,
       invoiceScheduleLine.id,
       expense.id,
+      expenseTag.id,
+      `${slug} tag`,
       activity.id,
     ],
   };
