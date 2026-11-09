@@ -197,6 +197,59 @@ describe("/api/v1/expenses", () => {
     expect((await call(list, "GET", "/api/v1/expenses?from=yesterday", readA)).status).toBe(422);
   });
 
+  it("takes tagIds, keeps them on PATCH, filters by ?tag= and refuses foreign tags", async () => {
+    const [travel, client] = await db
+      .insert(schema.expenseTag)
+      .values([
+        { businessId: bizA, name: "API travel" },
+        { businessId: bizA, name: "API client" },
+      ])
+      .returning();
+    const [, otherBiz] = await db.select().from(schema.business).orderBy(schema.business.createdAt);
+    const [foreign] = await db
+      .insert(schema.expenseTag)
+      .values({ businessId: otherBiz.id, name: "Foreign" })
+      .returning();
+
+    const created = await makeExpense(writeA, {
+      description: "API tagged",
+      tagIds: [travel.id],
+    });
+    expect(created.status).toBe(201);
+    const expenseId = created.body.id;
+    await makeExpense(writeA, { description: "API other tag", tagIds: [client.id] });
+
+    const { GET, PATCH } = await expenseRoute();
+    await call(PATCH, "PATCH", `/api/v1/expenses/${expenseId}`, writeA, {
+      params: { expenseId },
+      body: { notes: "kept tags" },
+    });
+    const read = await call(GET, "GET", `/api/v1/expenses/${expenseId}`, writeA, {
+      params: { expenseId },
+    });
+    expect(read.body.tags.map((t: { name: string }) => t.name)).toEqual(["API travel"]);
+
+    const list = await expensesRoute();
+    const filtered = await call(list.GET, "GET", `/api/v1/expenses?tag=${travel.id}`, readA);
+    expect(filtered.status).toBe(200);
+    expect(filtered.body.data.map((e: { description: string }) => e.description)).toEqual([
+      "API tagged",
+    ]);
+    const either = await call(
+      list.GET,
+      "GET",
+      `/api/v1/expenses?tag=${travel.id}&tag=${client.id}`,
+      readA,
+    );
+    expect(either.body.data).toHaveLength(2);
+    expect(
+      (await call(list.GET, "GET", "/api/v1/expenses?tag=nope", readA)).status,
+    ).toBe(422);
+
+    const smuggled = await makeExpense(writeA, { tagIds: [foreign.id] });
+    expect(smuggled.status).toBe(422);
+  });
+
   it("names the field when a body is invalid, and refuses receipts", async () => {
     const noAmount = await makeExpense(writeA, { amountMinor: -5 });
     expect(noAmount.status).toBe(422);

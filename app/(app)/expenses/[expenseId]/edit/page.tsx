@@ -45,6 +45,7 @@ export default async function EditExpensePage({
           incurredAt: expense.incurredAt,
           notes: expense.notes,
           receiptFilename: expense.receiptFilename,
+          tagIds: expense.tags.map((tag) => tag.id),
         }}
       />
     </div>

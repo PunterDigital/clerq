@@ -93,6 +93,26 @@ function buildFakeCaller(recorded: Recorded[]) {
         id: "e1",
         ...(input as object),
       })),
+      create: rec("expenses.create", (input: unknown) => ({
+        id: "e-new",
+        ...(input as object),
+      })),
+      update: rec("expenses.update", (input: { expenseId: string }) => ({
+        id: input.expenseId,
+      })),
+      tags: {
+        list: rec("expenses.tags.list", {
+          tags: [
+            { id: "t-travel", name: "Travel", color: "blue", expenseCount: 2 },
+            { id: "t-client", name: "Client A", color: "teal", expenseCount: 1 },
+          ],
+          canManage: true,
+          canCreate: true,
+        }),
+        ensure: rec("expenses.tags.ensure", (input: { names: string[] }) =>
+          input.names.map((name) => ({ id: `t-${name.toLowerCase()}`, name, color: "gray" })),
+        ),
+      },
     },
     team: {
       list: rec("team.list", {
@@ -175,8 +195,10 @@ describe("Clerq MCP server", () => {
         "generate_recurring_invoice_now",
         "delete_recurring_invoice",
         "list_expenses",
+        "list_expense_tags",
         "get_expense",
         "create_expense",
+        "set_expense_tags",
         "mark_expense_paid",
         "mark_expense_unpaid",
         "delete_expense",
@@ -328,6 +350,92 @@ describe("Clerq MCP server", () => {
       method: "expenses.setStatus",
       input: { expenseId: "77777777-7777-4777-8777-777777777777", status: "paid" },
     });
+  });
+
+  it("list_expenses turns tag names into ids, ignoring case", async () => {
+    const recorded: Recorded[] = [];
+    const client = await connectClient(buildFakeCaller(recorded));
+    await client.callTool({
+      name: "list_expenses",
+      arguments: { status: "paid", tags: ["travel", "Nope"] },
+    });
+    expect(recorded).toContainEqual({
+      method: "expenses.list",
+      input: { status: "paid", tagIds: ["t-travel"] },
+    });
+  });
+
+  it("list_expenses with only unknown tag names matches nothing", async () => {
+    const recorded: Recorded[] = [];
+    const client = await connectClient(buildFakeCaller(recorded));
+    const result = (await client.callTool({
+      name: "list_expenses",
+      arguments: { tags: ["Nope"] },
+    })) as CallToolResult;
+    expect(jsonOf(result)).toEqual([]);
+    expect(recorded.map((r) => r.method)).not.toContain("expenses.list");
+  });
+
+  it("create_expense creates missing tags by name and passes their ids", async () => {
+    const recorded: Recorded[] = [];
+    const client = await connectClient(buildFakeCaller(recorded));
+    await client.callTool({
+      name: "create_expense",
+      arguments: {
+        description: "Train",
+        amountMinor: 4200,
+        currency: "EUR",
+        incurredAt: "2026-11-02T00:00:00.000Z",
+        tags: ["Travel"],
+      },
+    });
+    expect(recorded).toContainEqual({
+      method: "expenses.tags.ensure",
+      input: { names: ["Travel"] },
+    });
+    expect(recorded).toContainEqual(
+      expect.objectContaining({
+        method: "expenses.create",
+        input: expect.objectContaining({ tagIds: ["t-travel"] }),
+      }),
+    );
+  });
+
+  it("create_expense without tags sends no tag ids (the Panel sync shape)", async () => {
+    const recorded: Recorded[] = [];
+    const client = await connectClient(buildFakeCaller(recorded));
+    await client.callTool({
+      name: "create_expense",
+      arguments: {
+        description: "Hosting",
+        amountMinor: 900,
+        currency: "EUR",
+        incurredAt: "2026-11-02T00:00:00.000Z",
+      },
+    });
+    const create = recorded.find((r) => r.method === "expenses.create");
+    expect((create?.input as { tagIds?: unknown }).tagIds).toBeUndefined();
+    expect(recorded.map((r) => r.method)).not.toContain("expenses.tags.ensure");
+  });
+
+  it("set_expense_tags keeps every other field and the receipt", async () => {
+    const recorded: Recorded[] = [];
+    const client = await connectClient(buildFakeCaller(recorded));
+    const expenseId = "99999999-9999-4999-8999-999999999999";
+    const result = (await client.callTool({
+      name: "set_expense_tags",
+      arguments: { expenseId, tags: ["Travel", "Client A"] },
+    })) as CallToolResult;
+    const update = recorded.find((r) => r.method === "expenses.update");
+    const data = (update?.input as { data: Record<string, unknown> }).data;
+    expect(data).toMatchObject({
+      description: "Camera",
+      amountMinor: 90000,
+      currency: "EUR",
+      tagIds: ["t-travel", "t-client a"],
+    });
+    expect("receipt" in data).toBe(false);
+    expect((jsonOf(result) as Record<string, unknown>).receiptDataUrl).toBeUndefined();
   });
 
   it("get_expense omits the receipt data URL but flags its presence", async () => {

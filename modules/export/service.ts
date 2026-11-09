@@ -202,6 +202,30 @@ export const EXPORT_ENTITIES: ExportEntity[] = [
         .orderBy(asc(schema.expense.createdAt)),
   },
   {
+    // Expense tags and which expenses carry them (#4395).
+    key: "expenseTags",
+    table: schema.expenseTag,
+    select: (db, businessId) =>
+      db
+        .select()
+        .from(schema.expenseTag)
+        .where(eq(schema.expenseTag.businessId, businessId))
+        .orderBy(asc(schema.expenseTag.createdAt), asc(schema.expenseTag.id)),
+  },
+  {
+    key: "expenseTagLinks",
+    table: schema.expenseTagLink,
+    select: (db, businessId) =>
+      db
+        .select()
+        .from(schema.expenseTagLink)
+        .where(eq(schema.expenseTagLink.businessId, businessId))
+        .orderBy(
+          asc(schema.expenseTagLink.expenseId),
+          asc(schema.expenseTagLink.tagId),
+        ),
+  },
+  {
     // The client activity thread (notes plus lifecycle events), in insertion
     // order (seq, not at: timestamps can collide within a microsecond).
     key: "activity",

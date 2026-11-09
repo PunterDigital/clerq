@@ -1,9 +1,23 @@
-import { and, asc, desc, eq, gte, ilike, isNotNull, lt, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  lt,
+  or,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import type { Db } from "@/db";
 import { schema } from "@/db";
 import { likeContains } from "@/lib/search";
+
+import { setExpenseTags, tagIdsSchema, tagsForExpenses } from "./tags";
 
 // Every function takes the caller's businessId and applies it to every
 // query. An expense id from another business behaves exactly like a missing
@@ -44,6 +58,9 @@ export const expenseInputSchema = z.object({
   // null clears it, an object replaces it. On create, omitted/null means no
   // receipt.
   receipt: receiptSchema.nullable().optional(),
+  // The expense's tags (#4395), replacing whatever it had. Omitted keeps the
+  // existing tags on update (and means none on create).
+  tagIds: tagIdsSchema.optional(),
 });
 
 export type ExpenseInput = z.infer<typeof expenseInputSchema>;
@@ -72,11 +89,28 @@ const listColumns = {
 export async function listExpenses(
   db: Db,
   businessId: string,
-  opts: { status?: ExpenseStatus; search?: string } = {},
+  opts: { status?: ExpenseStatus; search?: string; tagIds?: string[] } = {},
 ) {
   const filters = [eq(schema.expense.businessId, businessId)];
   if (opts.status) {
     filters.push(eq(schema.expense.status, opts.status));
+  }
+  // Carrying any of these tags (match any).
+  if (opts.tagIds && opts.tagIds.length > 0) {
+    filters.push(
+      exists(
+        db
+          .select({ one: schema.expenseTagLink.tagId })
+          .from(schema.expenseTagLink)
+          .where(
+            and(
+              eq(schema.expenseTagLink.businessId, businessId),
+              eq(schema.expenseTagLink.expenseId, schema.expense.id),
+              inArray(schema.expenseTagLink.tagId, opts.tagIds),
+            ),
+          ),
+      ),
+    );
   }
   // Match on the description, vendor, or category.
   const term = opts.search?.trim();
@@ -90,12 +124,18 @@ export async function listExpenses(
       )!,
     );
   }
-  return db
+  const rows = await db
     .select(listColumns)
     .from(schema.expense)
     .where(and(...filters))
     // Newest cost first; created_at breaks ties for same-day entries.
     .orderBy(desc(schema.expense.incurredAt), desc(schema.expense.createdAt));
+  const tags = await tagsForExpenses(
+    db,
+    businessId,
+    rows.map((row) => row.id),
+  );
+  return rows.map((row) => ({ ...row, tags: tags.get(row.id) ?? [] }));
 }
 
 // Receipted expenses in a half-open [from, to) window, receipt bytes
@@ -149,7 +189,9 @@ export async function getExpense(
         eq(schema.expense.id, expenseId),
       ),
     );
-  return row ?? null;
+  if (!row) return null;
+  const tags = await tagsForExpenses(db, businessId, [row.id]);
+  return { ...row, tags: tags.get(row.id) ?? [] };
 }
 
 function receiptColumns(receipt: ExpenseInput["receipt"]) {
@@ -172,21 +214,26 @@ export async function createExpense(
   businessId: string,
   input: ExpenseInput,
 ) {
-  const [created] = await db
-    .insert(schema.expense)
-    .values({
-      businessId,
-      description: input.description,
-      amountMinor: input.amountMinor,
-      currency: input.currency,
-      vendor: input.vendor ?? null,
-      category: input.category ?? null,
-      incurredAt: input.incurredAt,
-      notes: input.notes ?? null,
-      ...receiptColumns(input.receipt),
-    })
-    .returning();
-  return created;
+  return db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(schema.expense)
+      .values({
+        businessId,
+        description: input.description,
+        amountMinor: input.amountMinor,
+        currency: input.currency,
+        vendor: input.vendor ?? null,
+        category: input.category ?? null,
+        incurredAt: input.incurredAt,
+        notes: input.notes ?? null,
+        ...receiptColumns(input.receipt),
+      })
+      .returning();
+    if (input.tagIds && input.tagIds.length > 0) {
+      await setExpenseTags(tx, businessId, created.id, input.tagIds);
+    }
+    return created;
+  });
 }
 
 export async function updateExpense(
@@ -199,27 +246,34 @@ export async function updateExpense(
   // only replace or clear it when receipt is explicitly present.
   const receipt =
     input.receipt === undefined ? {} : receiptColumns(input.receipt);
-  const [updated] = await db
-    .update(schema.expense)
-    .set({
-      description: input.description,
-      amountMinor: input.amountMinor,
-      currency: input.currency,
-      vendor: input.vendor ?? null,
-      category: input.category ?? null,
-      incurredAt: input.incurredAt,
-      notes: input.notes ?? null,
-      ...receipt,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(schema.expense.businessId, businessId),
-        eq(schema.expense.id, expenseId),
-      ),
-    )
-    .returning();
-  return updated ?? null;
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(schema.expense)
+      .set({
+        description: input.description,
+        amountMinor: input.amountMinor,
+        currency: input.currency,
+        vendor: input.vendor ?? null,
+        category: input.category ?? null,
+        incurredAt: input.incurredAt,
+        notes: input.notes ?? null,
+        ...receipt,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.expense.businessId, businessId),
+          eq(schema.expense.id, expenseId),
+        ),
+      )
+      .returning();
+    if (!updated) return null;
+    // Same three-state rule as the receipt: omitted keeps the tags.
+    if (input.tagIds !== undefined) {
+      await setExpenseTags(tx, businessId, updated.id, input.tagIds);
+    }
+    return updated;
+  });
 }
 
 // Mark paid/unpaid. paid_at is the audit point: stamped when paid, cleared

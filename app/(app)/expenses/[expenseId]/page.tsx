@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ExpenseTagChip } from "@/components/expense-tag-chip";
 import { ExpenseStatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -89,6 +90,23 @@ export default async function ExpenseDetailPage({
               <>
                 <dt className="text-muted-foreground">Category</dt>
                 <dd>{expense.category}</dd>
+              </>
+            ) : null}
+
+            {expense.tags.length > 0 ? (
+              <>
+                <dt className="text-muted-foreground">Tags</dt>
+                <dd className="flex flex-wrap gap-1.5">
+                  {expense.tags.map((tag) => (
+                    <Link
+                      key={tag.id}
+                      href={`/expenses?tag=${tag.id}`}
+                      className="rounded-full focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                    >
+                      <ExpenseTagChip name={tag.name} color={tag.color} />
+                    </Link>
+                  ))}
+                </dd>
               </>
             ) : null}
 
