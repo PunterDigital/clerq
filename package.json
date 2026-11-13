@@ -24,17 +24,17 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@react-pdf/renderer": "^4.9.0",
-    "@tanstack/react-query": "^5.106.1",
-    "@trpc/client": "^11.24.0",
-    "@trpc/server": "^11.24.0",
-    "@trpc/tanstack-react-query": "^11.24.0",
+    "@tanstack/react-query": "^5.107.1",
+    "@trpc/client": "^11.26.0",
+    "@trpc/server": "^11.26.0",
+    "@trpc/tanstack-react-query": "^11.26.0",
     "better-auth": "^1.6.34",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.4",
     "fflate": "^0.8.3",
-    "lucide-react": "^1.69.0",
-    "next": "16.4.5",
+    "lucide-react": "^1.71.0",
+    "next": "16.4.6",
     "pdfjs-dist": "^6.5.438",
     "pg": "^8.23.1",
     "radix-ui": "^1.8.1",
@@ -47,7 +47,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.15",
+    "@electric-sql/pglite": "^0.5.16",
     "@playwright/test": "^1.65.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^26",
@@ -57,12 +57,12 @@
     "drizzle-kit": "^0.31.11",
     "esbuild": "^0.28.2",
     "eslint": "^9",
-    "eslint-config-next": "16.4.5",
+    "eslint-config-next": "16.4.6",
     "shadcn": "^4.23.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^6",
-    "vite": "^8.3.6",
+    "vite": "^8.3.7",
     "vitest": "^4.1.8"
   }
 }
