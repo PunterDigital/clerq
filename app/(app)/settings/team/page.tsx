@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 
-import { getAuth } from "@/server/auth";
+import { getEffectiveSession } from "@/server/session";
 import { caller } from "@/server/trpc/server";
 
 import { TeamManager } from "./team-manager";
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function TeamPage() {
-  const session = await getAuth().api.getSession({ headers: await headers() });
+  const session = await getEffectiveSession(await headers());
   const {
     members,
     invitations,

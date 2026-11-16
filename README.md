@@ -131,6 +131,16 @@ It's idempotent, so re-running is harmless. Once you're in, grant any other
 admins from System Administration → Users. (Contributors running from a source
 checkout can use `pnpm admin:grant <email>` instead.)
 
+### View the app as a user (support)
+
+To diagnose a problem someone reports, open their page under System
+Administration → Users and choose **View as this user**. You give a reason,
+then see the app exactly as they do: their business, their permissions, their
+data. It is read-only (every change is refused, and data export is off), ends
+after an hour or when you click **Stop viewing** in the banner, and each visit
+is listed with its reason under **Support access** on that user's page. Other
+platform admins and suspended accounts can't be viewed as.
+
 ### Check which version is running
 
 `GET /version` returns the running release, e.g. `{"version":"1.4.0"}`

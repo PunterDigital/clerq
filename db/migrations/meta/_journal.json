@@ -183,6 +183,13 @@
       "when": 1794254860798,
       "tag": "0025_expense_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794863267328,
+      "tag": "0026_impersonation",
+      "breakpoints": true
     }
   ]
 }

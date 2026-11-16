@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { ImpersonationBanner } from "@/components/app-shell/impersonation-banner";
 import { Sidebar } from "@/components/app-shell/sidebar";
 import { Topbar } from "@/components/app-shell/topbar";
 import { UpdateBanner } from "@/components/app-shell/update-banner";
@@ -10,7 +11,7 @@ import {
   getUserSuspension,
   isPlatformAdmin,
 } from "@/modules/platform/service";
-import { getAuth } from "@/server/auth";
+import { getEffectiveSession } from "@/server/session";
 import { getActiveMembership } from "@/server/membership";
 import { caller } from "@/server/trpc/server";
 
@@ -26,7 +27,7 @@ export const dynamic = "force-dynamic";
 export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const session = await getAuth().api.getSession({ headers: await headers() });
+  const session = await getEffectiveSession(await headers());
   if (!session) {
     redirect("/sign-in");
   }
@@ -34,9 +35,24 @@ export default async function AppLayout({
   // A suspended account never sees the app shell - mirrors the FORBIDDEN
   // server/trpc/init.ts throws on every request, but as a friendly page
   // instead of an error bubbling up from the first tRPC call.
+  // While a platform admin views as this user, the banner (with the way
+  // out) tops every page, the suspension notices included.
+  const banner = session.impersonation ? (
+    <ImpersonationBanner
+      userName={session.user.name}
+      userEmail={session.user.email}
+      expiresAt={session.impersonation.expiresAt}
+    />
+  ) : null;
+
   const userSuspension = await getUserSuspension(getDb(), session.user.id);
   if (userSuspension) {
-    return <SuspendedNotice scope="account" reason={userSuspension.reason} />;
+    return (
+      <>
+        {banner}
+        <SuspendedNotice scope="account" reason={userSuspension.reason} />
+      </>
+    );
   }
 
   const membership = await getActiveMembership(session.user.id);
@@ -46,7 +62,12 @@ export default async function AppLayout({
 
   const businessSuspension = await getBusinessSuspension(getDb(), membership.businessId);
   if (businessSuspension) {
-    return <SuspendedNotice scope="business" reason={businessSuspension.reason} />;
+    return (
+      <>
+        {banner}
+        <SuspendedNotice scope="business" reason={businessSuspension.reason} />
+      </>
+    );
   }
 
   const [businesses, admin] = await Promise.all([
@@ -65,6 +86,7 @@ export default async function AppLayout({
     <div className="flex h-screen overflow-hidden">
       <Sidebar isPlatformAdmin={admin} />
       <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+        {banner}
         <Topbar businesses={businesses} userName={session.user.name} isPlatformAdmin={admin} />
         {updateStatus?.checked && updateStatus.updateAvailable ? (
           <UpdateBanner

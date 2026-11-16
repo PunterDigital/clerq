@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 
-import { getAuth } from "@/server/auth";
+import { getEffectiveSession } from "@/server/session";
 import { getActiveMembership } from "@/server/membership";
 import { caller } from "@/server/trpc/server";
 
@@ -14,7 +14,7 @@ export default async function SettingsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getAuth().api.getSession({ headers: await headers() });
+  const session = await getEffectiveSession(await headers());
   const membership = session
     ? await getActiveMembership(session.user.id)
     : null;

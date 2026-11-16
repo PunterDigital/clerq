@@ -20,6 +20,8 @@ import * as schema from "./schema";
 // - platform_admin/user_suspension are platform-level infrastructure keyed by
 //   user_id, not business data (business_suspension is keyed by business_id,
 //   so it already satisfies the rule without an exemption)
+// - impersonation is the platform admins' support audit log, keyed by the
+//   admin and the user they viewed as, not by any business
 const exemptTables = [
   "business",
   "user",
@@ -32,6 +34,7 @@ const exemptTables = [
   "instance_settings",
   "platform_admin",
   "user_suspension",
+  "impersonation",
 ];
 
 const tables = Object.values(schema).filter((value) => is(value, PgTable));

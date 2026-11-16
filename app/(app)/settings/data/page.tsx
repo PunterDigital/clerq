@@ -10,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getAuth } from "@/server/auth";
+import { getEffectiveSession } from "@/server/session";
 import { getActiveMembership } from "@/server/membership";
 
 export const metadata: Metadata = {
@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 export default async function DataSettingsPage() {
   // Exporting the whole business is a high-trust action (owner/admin only),
   // so the card is shown only to callers who actually hold the permission.
-  const session = await getAuth().api.getSession({ headers: await headers() });
+  const session = await getEffectiveSession(await headers());
   const membership = session
     ? await getActiveMembership(session.user.id)
     : null;

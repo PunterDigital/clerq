@@ -2,7 +2,7 @@ import { getDb } from "@/db";
 import { buildReceiptsArchive } from "@/modules/expenses/receipts-archive";
 import { listExpenseReceipts } from "@/modules/expenses/service";
 import { getBusinessSuspension } from "@/modules/platform/service";
-import { getAuth } from "@/server/auth";
+import { getEffectiveSession } from "@/server/session";
 import { getActiveMembership } from "@/server/membership";
 
 // Download every expense receipt whose incurred date falls in [from, to) as
@@ -25,7 +25,7 @@ import { getActiveMembership } from "@/server/membership";
 const MAX_RANGE_MS = 400 * 24 * 60 * 60 * 1000;
 
 export async function GET(req: Request): Promise<Response> {
-  const session = await getAuth().api.getSession({ headers: req.headers });
+  const session = await getEffectiveSession(req.headers);
   if (!session) {
     return new Response("Sign in first", { status: 401 });
   }

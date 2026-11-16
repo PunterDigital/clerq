@@ -6,10 +6,11 @@ import { notFound } from "next/navigation";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, formatDateTime } from "@/lib/format";
-import { getAuth } from "@/server/auth";
+import { getEffectiveSession } from "@/server/session";
 import { caller } from "@/server/trpc/server";
 
 import { AdminToggleControl } from "./admin-toggle-control";
+import { ImpersonateControl } from "./impersonate-control";
 import { SuspendUserControl } from "./suspend-user-control";
 
 export const metadata: Metadata = {
@@ -37,8 +38,17 @@ export default async function SystemAdminUserDetailPage({
   const { userId } = await params;
   const [user, session] = await Promise.all([
     loadUser(userId),
-    getAuth().api.getSession({ headers: await headers() }),
+    getEffectiveSession(await headers()),
   ]);
+
+  const isSelf = session?.user.id === user.id;
+  const impersonateDisabled = isSelf
+    ? "You can't view as yourself."
+    : user.isPlatformAdmin
+      ? "Platform admins can't be viewed as."
+      : user.suspension
+        ? "Reactivate this account to view as it."
+        : null;
 
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
@@ -108,8 +118,43 @@ export default async function SystemAdminUserDetailPage({
           <AdminToggleControl
             userId={user.id}
             isPlatformAdmin={user.isPlatformAdmin}
-            isSelf={session?.user.id === user.id}
+            isSelf={isSelf}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Support access</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <ImpersonateControl userId={user.id} disabledReason={impersonateDisabled} />
+          <div className="flex flex-col gap-2">
+            <h2 className="text-sm font-medium">History</h2>
+            {user.impersonations.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No one has viewed as this user.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-3" data-testid="impersonation-history">
+                {user.impersonations.map((i) => (
+                  <li key={i.id} className="flex flex-col gap-0.5 text-sm">
+                    <span>
+                      <span className="font-medium">{i.adminName}</span>
+                      <span className="text-muted-foreground">
+                        {" "}
+                        - {formatDateTime(i.startedAt)}
+                        {i.endedAt
+                          ? ` to ${formatDateTime(i.endedAt)}${i.endedBy === "expired" ? " (expired)" : ""}`
+                          : " (in progress)"}
+                      </span>
+                    </span>
+                    <span className="text-muted-foreground">{i.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

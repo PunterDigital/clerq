@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getInvoice } from "@/modules/billing/lifecycle";
 import { buildInvoicePdfData } from "@/modules/billing/pdf-data";
-import { getAuth } from "@/server/auth";
+import { getEffectiveSession } from "@/server/session";
 import { verifyInvoicePdfToken } from "@/server/mcp/pdf-link";
 import { getActiveMembership } from "@/server/membership";
 import { buildInvoicePdf } from "@/server/pdf/invoice-document";
@@ -28,7 +28,7 @@ async function resolveBusinessId(
     return payload.businessId;
   }
 
-  const session = await getAuth().api.getSession({ headers: req.headers });
+  const session = await getEffectiveSession(req.headers);
   if (!session) {
     return new Response("Sign in first", { status: 401 });
   }

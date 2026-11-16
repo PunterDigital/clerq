@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 
 import { getDb } from "@/db";
 import { isPlatformAdmin } from "@/modules/platform/service";
-import { getAuth } from "@/server/auth";
+import { getEffectiveSession } from "@/server/session";
 
 import { SystemAdminNav } from "./nav";
 
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function SystemAdminLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const session = await getAuth().api.getSession({ headers: await headers() });
+  const session = await getEffectiveSession(await headers());
   if (!session) {
     redirect("/sign-in");
   }

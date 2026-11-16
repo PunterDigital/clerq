@@ -16,6 +16,10 @@ import {
   suspendBusiness,
   suspendUser,
 } from "@/modules/platform/service";
+import {
+  listImpersonationsOf,
+  startImpersonation,
+} from "@/modules/platform/impersonation";
 
 import { createTRPCRouter, platformAdminProcedure } from "../init";
 
@@ -36,7 +40,47 @@ export const adminRouter = createTRPCRouter({
       if (!user) {
         throw new TRPCError({ code: "NOT_FOUND", message: "No such user" });
       }
-      return user;
+      const impersonations = await listImpersonationsOf(getDb(), input.userId);
+      return { ...user, impersonations };
+    }),
+
+  // Read-only support access: view the app as this user (see
+  // modules/platform/impersonation.ts). The reason is required and kept in
+  // the audit history on the user's page.
+  startImpersonation: platformAdminProcedure
+    .input(
+      z.object({
+        userId: z.string(),
+        reason: z
+          .string()
+          .trim()
+          .min(1, "Say why you need to view as this user")
+          .max(500),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const result = await startImpersonation(getDb(), {
+        adminUserId: ctx.session.user.id,
+        adminSessionId: ctx.session.session.id,
+        targetUserId: input.userId,
+        reason: input.reason,
+      });
+      if (!result.ok) {
+        const refusals = {
+          not_found: { code: "NOT_FOUND", message: "No such user" },
+          self: { code: "FORBIDDEN", message: "You can't view as yourself" },
+          platform_admin: {
+            code: "FORBIDDEN",
+            message: "You can't view as another platform admin",
+          },
+          suspended: {
+            code: "PRECONDITION_FAILED",
+            message: "That account is suspended; reactivate it first",
+          },
+        } as const;
+        throw new TRPCError(refusals[result.reason]);
+      }
+      return { ok: true };
     }),
 
   suspendUser: platformAdminProcedure

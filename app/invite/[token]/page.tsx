@@ -11,7 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getAuth } from "@/server/auth";
+import { getEffectiveSession } from "@/server/session";
 import { caller } from "@/server/trpc/server";
 
 import { AcceptForm } from "./accept-form";
@@ -47,7 +47,7 @@ export default async function InvitePage({
 }) {
   const { token } = await params;
   const [session, preview] = await Promise.all([
-    getAuth().api.getSession({ headers: await headers() }),
+    getEffectiveSession(await headers()),
     caller.team.preview({ token }),
   ]);
 

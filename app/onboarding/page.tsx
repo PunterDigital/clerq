@@ -3,7 +3,8 @@ import { headers } from "next/headers";
 import Image from "next/image";
 import { redirect } from "next/navigation";
 
-import { getAuth } from "@/server/auth";
+import { ImpersonationBanner } from "@/components/app-shell/impersonation-banner";
+import { getEffectiveSession } from "@/server/session";
 import { getActiveMembership } from "@/server/membership";
 
 import { OnboardingForm } from "./onboarding-form";
@@ -16,7 +17,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function OnboardingPage() {
-  const session = await getAuth().api.getSession({ headers: await headers() });
+  const session = await getEffectiveSession(await headers());
   if (!session) {
     redirect("/sign-in");
   }
@@ -26,6 +27,14 @@ export default async function OnboardingPage() {
   }
 
   return (
+    <>
+      {session.impersonation ? (
+        <ImpersonationBanner
+          userName={session.user.name}
+          userEmail={session.user.email}
+          expiresAt={session.impersonation.expiresAt}
+        />
+      ) : null}
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-background px-4 py-12">
       <Image
         src="/brand/clerq-logo.svg"
@@ -38,5 +47,6 @@ export default async function OnboardingPage() {
         <OnboardingForm />
       </div>
     </main>
+    </>
   );
 }
