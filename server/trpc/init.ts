@@ -9,8 +9,10 @@ import {
   getUserSuspension,
   isPlatformAdmin,
 } from "@/modules/platform/service";
-import { getAuth, type Session } from "@/server/auth";
+import type { ActiveImpersonation } from "@/modules/platform/impersonation";
+import type { Session } from "@/server/auth";
 import { getActiveMembership, getMembershipIn } from "@/server/membership";
+import { getEffectiveSession } from "@/server/session";
 
 function suspensionMessage(scope: "account" | "business", reason: string | null): string {
   const subject = scope === "account" ? "Your account" : "This business";
@@ -30,16 +32,20 @@ export type TRPCContext = {
   headers: Headers;
   session: Session | null;
   apiKey?: ApiKeyPrincipal;
+  // Set while a platform admin is viewing the app as session.user (see
+  // modules/platform/impersonation.ts). Every mutation is refused then.
+  impersonation?: ActiveImpersonation;
 };
 
 export const createTRPCContext = async (opts: {
   headers: Headers;
 }): Promise<TRPCContext> => {
-  const session = await getAuth().api.getSession({ headers: opts.headers });
-  return {
-    headers: opts.headers,
-    session: session as Session | null,
-  };
+  const effective = await getEffectiveSession(opts.headers);
+  if (!effective) return { headers: opts.headers, session: null };
+  const { impersonation, ...session } = effective;
+  return impersonation
+    ? { headers: opts.headers, session, impersonation }
+    : { headers: opts.headers, session };
 };
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -81,6 +87,14 @@ const sessionProcedure = publicProcedure.use(async ({ ctx, next, type }) => {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: suspensionMessage("account", suspension.reason),
+    });
+  }
+  // Impersonation is for looking, never for acting in someone's name. The
+  // one way out, impersonation.stop, is built on publicProcedure instead.
+  if (ctx.impersonation && type !== "query") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Read-only while viewing as another user",
     });
   }
   if (ctx.apiKey?.scope === "read" && type !== "query") {

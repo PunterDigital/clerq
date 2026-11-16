@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { isReceiptScanConfigured } from "@/modules/expenses/ocr";
-import { getAuth } from "@/server/auth";
+import { getEffectiveSession } from "@/server/session";
 import { getActiveMembership } from "@/server/membership";
 import { caller } from "@/server/trpc/server";
 
@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 
 export default async function BulkUploadPage() {
   const business = await caller.business.current();
-  const session = await getAuth().api.getSession({ headers: await headers() });
+  const session = await getEffectiveSession(await headers());
   const membership = session
     ? await getActiveMembership(session.user.id)
     : null;

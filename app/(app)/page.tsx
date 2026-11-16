@@ -5,7 +5,7 @@ import Link from "next/link";
 import { InvoiceStatusPill } from "@/components/status-pill";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDateTime, formatMinutes, formatMoney } from "@/lib/format";
-import { getAuth } from "@/server/auth";
+import { getEffectiveSession } from "@/server/session";
 import { caller } from "@/server/trpc/server";
 
 // Per-request: session check + DB lookups, never prerenderable.
@@ -56,7 +56,7 @@ function StatCard({
 }
 
 export default async function DashboardPage() {
-  const session = await getAuth().api.getSession({ headers: await headers() });
+  const session = await getEffectiveSession(await headers());
   const summary = await caller.dashboard.summary();
   const firstName = session?.user.name.split(" ")[0] ?? "there";
 

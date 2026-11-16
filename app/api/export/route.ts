@@ -1,7 +1,7 @@
 import { getDb } from "@/db";
 import { exportBusinessData } from "@/modules/export/service";
 import { getBusinessSuspension } from "@/modules/platform/service";
-import { getAuth } from "@/server/auth";
+import { getEffectiveSession } from "@/server/session";
 import { getActiveMembership } from "@/server/membership";
 
 // Download the caller's entire business as one portable JSON file - the
@@ -21,9 +21,17 @@ function slugify(name: string): string {
 }
 
 export async function GET(req: Request): Promise<Response> {
-  const session = await getAuth().api.getSession({ headers: req.headers });
+  const session = await getEffectiveSession(req.headers);
   if (!session) {
     return new Response("Sign in first", { status: 401 });
+  }
+
+  // Same rule as dataExport.everything: no copies of a user's data while a
+  // platform admin is viewing as them.
+  if (session.impersonation) {
+    return new Response("Data export is off while viewing as another user", {
+      status: 403,
+    });
   }
 
   const membership = await getActiveMembership(session.user.id);

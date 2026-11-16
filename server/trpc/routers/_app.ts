@@ -7,6 +7,7 @@ import { dashboardRouter } from "./dashboard";
 import { expensesRouter } from "./expenses";
 import { exportRouter } from "./export";
 import { healthRouter } from "./health";
+import { impersonationRouter } from "./impersonation";
 import { invoicesRouter } from "./invoices";
 import { projectsRouter } from "./projects";
 import { recurringRouter } from "./recurring";
@@ -31,6 +32,7 @@ export const appRouter = createTRPCRouter({
   reports: reportsRouter,
   system: systemRouter,
   admin: adminRouter,
+  impersonation: impersonationRouter,
   dataExport: exportRouter,
   apiKeys: apiKeysRouter,
 });

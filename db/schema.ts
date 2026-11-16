@@ -777,6 +777,38 @@ export const businessSuspension = pgTable("business_suspension", {
   suspendedByUserId: text("suspended_by_user_id").references(() => user.id),
 });
 
+// Support impersonation: a platform admin viewing the app as another user to
+// diagnose a problem (modules/platform/impersonation.ts). Each row is both
+// the live overlay and its audit record. It is tied to the admin's own Better
+// Auth session (admin_session_id, deliberately no FK so the record outlives
+// the session): the admin stays signed in as themselves, and every request on
+// that session resolves to target_user_id until ended_at is set or expires_at
+// passes. Impersonation is read-only - see sessionProcedure in
+// server/trpc/init.ts.
+export const impersonation = pgTable(
+  "impersonation",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    adminUserId: text("admin_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    adminSessionId: text("admin_session_id").notNull(),
+    targetUserId: text("target_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    reason: text("reason").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("impersonation_admin_session_id_idx").on(table.adminSessionId),
+    index("impersonation_target_user_id_idx").on(table.targetUserId),
+  ],
+);
+
 // The client activity thread: notes written by users plus automatic
 // lifecycle events. payload shape depends on type and is owned by
 // modules/clients. The enum is TypeScript-level only (the column is
