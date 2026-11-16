@@ -4,7 +4,7 @@ import { generateFromTimeSchema } from "@/server/trpc/routers/invoices";
 
 // POST /api/v1/invoices/:invoiceId/generate-from-time - fill a draft with
 // lines from the client's unbilled billable time: { "grouping": "person_rate"
-// | "task" | "single", "projectId"?, "includeTaskList"?, "replace"?,
+// | "task" | "single", "projectId"?, "includeTaskList"?, "includeNotes"?, "replace"?,
 // "fxRates"? }. The result says what was added, or why nothing was
 // (nothing_to_bill, missing_fx_rates). 409 once the invoice is issued.
 export const dynamic = "force-dynamic";

@@ -90,6 +90,7 @@ export function GeneratePanel({
   const [grouping, setGrouping] = useState<Grouping>("person_rate");
   const [projectId, setProjectId] = useState<string>("");
   const [includeTaskList, setIncludeTaskList] = useState(false);
+  const [includeNotes, setIncludeNotes] = useState(false);
   const [replace, setReplace] = useState(false);
   const [rates, setRates] = useState<Record<string, RateDraft> | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -97,16 +98,22 @@ export function GeneratePanel({
 
   const generate = useMutation(
     trpc.invoices.generateFromTime.mutationOptions({
-      onSuccess: async (result) => {
+      onSuccess: async (result, variables) => {
         setError(null);
         if (result.ok) {
           setRates(null);
+          // Always say what happened: a Replace that rebuilds identical
+          // lines otherwise looks like it did nothing.
+          const lines = `${result.lineCount} ${result.lineCount === 1 ? "line" : "lines"}`;
+          const done = variables.replace
+            ? `Replaced the generated lines - ${lines} now`
+            : `Added ${lines}`;
           setNotice(
             result.unpricedEntryIds.length > 0
-              ? `${result.unpricedEntryIds.length} billable ${
+              ? `${done}. ${result.unpricedEntryIds.length} billable ${
                   result.unpricedEntryIds.length === 1 ? "entry has" : "entries have"
                 } no rate and stayed unbilled - set a default rate and regenerate`
-              : null,
+              : done,
           );
           router.refresh();
           return;
@@ -152,6 +159,7 @@ export function GeneratePanel({
       grouping,
       projectId: projectId || undefined,
       includeTaskList,
+      includeNotes,
       replace,
       fxRates:
         withRates && rates
@@ -215,6 +223,14 @@ export function GeneratePanel({
             List covered tasks in the description
           </label>
         ) : null}
+        <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={includeNotes}
+            onChange={(e) => setIncludeNotes(e.target.checked)}
+          />
+          List timesheet notes under each line
+        </label>
         <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
           <input
             type="checkbox"

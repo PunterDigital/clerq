@@ -166,7 +166,7 @@ A change the status doesn't allow is a 409.
 | `POST /invoices/{id}/lines` | Add a fixed-amount line to a draft: `{ "description", "amountMajor": "1500.00" }` |
 | `PATCH /invoices/{id}/lines/{lineId}` | Change a draft line's `description` or `amountMajor`. A new amount replaces its hours x rate breakdown |
 | `DELETE /invoices/{id}/lines/{lineId}` | Remove a draft line; its time goes back to unbilled |
-| `POST /invoices/{id}/generate-from-time` | Fill a draft from the client's unbilled billable time: `grouping` (`person_rate`, `task`, `single`) required; `projectId`, `includeTaskList`, `replace` (regenerate the time lines), `fxRates` |
+| `POST /invoices/{id}/generate-from-time` | Fill a draft from the client's unbilled billable time: `grouping` (`person_rate`, `task`, `single`) required; `projectId`, `includeTaskList` (task titles in each description), `includeNotes` (timesheet notes under each description), `replace` (regenerate the time lines), `fxRates` |
 | `POST /invoices/{id}/issue` | Number the draft and mark it sent |
 | `POST /invoices/{id}/mark-paid` | Mark a sent or overdue invoice paid |
 | `POST /invoices/{id}/void` | Void a sent or overdue invoice, optionally `{ "reason": "..." }`. It keeps its number; its time goes back to unbilled |
