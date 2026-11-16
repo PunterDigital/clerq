@@ -5,6 +5,7 @@
 
 import {
   and,
+  asc,
   eq,
   exists,
   inArray,
@@ -37,6 +38,8 @@ export type BillableEntry = {
   durationSeconds: number;
   rateMinor: number | null;
   rateCurrency: string | null;
+  // The timesheet note; listed on the line when includeNotes is set.
+  note?: string | null;
 };
 
 export type FxRateInput = { rate: string; source: "ecb" | "manual" };
@@ -117,12 +120,36 @@ function priceLine(
   };
 }
 
+// The timesheet notes behind one line, one "- " line each, in the order
+// the entries arrive (the db wrapper sorts them by start time). A
+// multi-line note gives one line per non-blank row; repeats are listed
+// once. When the line covers several tasks each note names its task, so
+// the client can tell which work it belongs to.
+function noteLines(entries: BillableEntry[]): string[] {
+  const severalTasks = new Set(entries.map((e) => e.taskId)).size > 1;
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const entry of entries) {
+    for (const row of (entry.note ?? "").split(/\r?\n/)) {
+      const text = row.trim();
+      const line = severalTasks ? `${entry.taskTitle}: ${text}` : text;
+      if (text === "" || seen.has(line)) {
+        continue;
+      }
+      seen.add(line);
+      lines.push(`- ${line}`);
+    }
+  }
+  return lines;
+}
+
 export function groupTimeEntriesToLines(input: {
   entries: BillableEntry[];
   grouping: GroupingMode;
   invoiceCurrency: string;
   fxRates?: Record<string, FxRateInput>;
   includeTaskList?: boolean;
+  includeNotes?: boolean;
 }): GroupingResult {
   const fxRates = input.fxRates ?? {};
   const priced = input.entries.filter(
@@ -208,12 +235,13 @@ export function groupTimeEntriesToLines(input: {
     const taskList = [
       ...new Set(group.entries.map((e) => e.taskTitle)),
     ].sort();
-    const description =
+    const heading =
       input.includeTaskList && input.grouping !== "task"
         ? `${group.description} (${taskList.join(", ")})`
         : group.description;
+    const notes = input.includeNotes ? noteLines(group.entries) : [];
     return {
-      description,
+      description: [heading, ...notes].join("\n"),
       entryIds: group.entries.map((e) => e.id),
       ...priceLine(
         totalSeconds,
@@ -374,6 +402,7 @@ export async function generateLinesFromUnbilledTime(
     grouping: GroupingMode;
     fxRates?: Record<string, FxRateInput>;
     includeTaskList?: boolean;
+    includeNotes?: boolean;
     replace?: boolean;
   },
 ) {
@@ -426,12 +455,15 @@ export async function generateLinesFromUnbilledTime(
         durationSeconds: schema.timeEntry.durationSeconds,
         rateMinor: schema.timeEntry.rateMinor,
         rateCurrency: schema.timeEntry.rateCurrency,
+        note: schema.timeEntry.note,
       })
       .from(schema.timeEntry)
       .innerJoin(schema.task, eq(schema.timeEntry.taskId, schema.task.id))
       .innerJoin(schema.project, eq(schema.task.projectId, schema.project.id))
       .innerJoin(schema.user, eq(schema.timeEntry.userId, schema.user.id))
-      .where(and(...scope));
+      .where(and(...scope))
+      // Logged order, so listed notes read as the work happened.
+      .orderBy(asc(schema.timeEntry.startedAt), asc(schema.timeEntry.id));
 
     const result = groupTimeEntriesToLines({
       entries: rows.map((r) => ({
@@ -442,6 +474,7 @@ export async function generateLinesFromUnbilledTime(
       invoiceCurrency: inv.currency,
       fxRates: input.fxRates,
       includeTaskList: input.includeTaskList,
+      includeNotes: input.includeNotes,
     });
     if (!result.ok) {
       if (result.reason === "nothing_to_bill") {

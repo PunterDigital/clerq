@@ -757,7 +757,14 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
         invoiceId: z.string().uuid(),
         projectId: z.string().uuid().optional().describe("Limit to one project."),
         grouping: z.enum(["person_rate", "task", "single"]),
-        includeTaskList: z.boolean().optional(),
+        includeTaskList: z
+          .boolean()
+          .optional()
+          .describe("Append the titles of the covered tasks to each line's description (not used with task grouping)."),
+        includeNotes: z
+          .boolean()
+          .optional()
+          .describe("List the time entries' timesheet notes under each line's description, one per line, in logged order."),
         replace: z
           .boolean()
           .optional()

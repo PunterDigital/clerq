@@ -72,6 +72,56 @@
           { "description": "Tracked time", "quantity": "1.500000", "unitPriceMinor": 31000, "totalMinor": 46500, "sourceCurrency": null, "sourceTotalMinor": null, "fxRate": null, "fxSource": null, "entryIds": ["e1", "e2"] }
         ],
         "unpricedEntryIds": []
+      },
+      {
+        "case": "timesheet notes on request: one line per note in logged order, multi-line notes split, repeats and blanks skipped, task prefix only when the line covers several tasks; money unchanged",
+        "grouping": "person_rate",
+        "invoiceCurrency": "EUR",
+        "includeTaskList": true,
+        "includeNotes": true,
+        "entries": [
+          { "id": "e1", "userId": "u1", "userName": "Tom", "taskId": "t1", "taskTitle": "xWave - Invoice 14", "durationSeconds": 3600, "rateMinor": 2375, "rateCurrency": "EUR", "note": "Fixed login redirect" },
+          { "id": "e2", "userId": "u1", "userName": "Tom", "taskId": "t1", "taskTitle": "xWave - Invoice 14", "durationSeconds": 7200, "rateMinor": 2375, "rateCurrency": "EUR", "note": "  Code review\n\n  Release notes  " },
+          { "id": "e3", "userId": "u1", "userName": "Tom", "taskId": "t1", "taskTitle": "xWave - Invoice 14", "durationSeconds": 1800, "rateMinor": 2375, "rateCurrency": "EUR", "note": "Fixed login redirect" },
+          { "id": "e4", "userId": "u1", "userName": "Tom", "taskId": "t1", "taskTitle": "xWave - Invoice 14", "durationSeconds": 1200, "rateMinor": 2375, "rateCurrency": "EUR", "note": null },
+          { "id": "e5", "userId": "u1", "userName": "Tom", "taskId": "t1", "taskTitle": "xWave - Invoice 14", "durationSeconds": 600, "rateMinor": 2375, "rateCurrency": "EUR", "note": "   " },
+          { "id": "e6", "userId": "u2", "userName": "Mara", "taskId": "t2", "taskTitle": "Rate limits", "durationSeconds": 3600, "rateMinor": 4500, "rateCurrency": "EUR", "note": "Load test" },
+          { "id": "e7", "userId": "u2", "userName": "Mara", "taskId": "t3", "taskTitle": "Webhook receiver", "durationSeconds": 1800, "rateMinor": 4500, "rateCurrency": "EUR", "note": "Retry queue" }
+        ],
+        "lines": [
+          { "description": "Tom - 23.75 EUR/h (xWave - Invoice 14)\n- Fixed login redirect\n- Code review\n- Release notes", "quantity": "4.000000", "unitPriceMinor": 2375, "totalMinor": 9500, "sourceCurrency": null, "sourceTotalMinor": null, "fxRate": null, "fxSource": null, "entryIds": ["e1", "e2", "e3", "e4", "e5"] },
+          { "description": "Mara - 45.00 EUR/h (Rate limits, Webhook receiver)\n- Rate limits: Load test\n- Webhook receiver: Retry queue", "quantity": "1.500000", "unitPriceMinor": 4500, "totalMinor": 6750, "sourceCurrency": null, "sourceTotalMinor": null, "fxRate": null, "fxSource": null, "entryIds": ["e6", "e7"] }
+        ],
+        "unpricedEntryIds": []
+      },
+      {
+        "case": "timesheet notes with task grouping: the task title stays the description, notes follow without a prefix",
+        "grouping": "task",
+        "invoiceCurrency": "EUR",
+        "includeNotes": true,
+        "entries": [
+          { "id": "e1", "userId": "u1", "userName": "Shay", "taskId": "t1", "taskTitle": "Design review", "durationSeconds": 2700, "rateMinor": 8000, "rateCurrency": "EUR", "note": "Wireframes" },
+          { "id": "e2", "userId": "u2", "userName": "Mara", "taskId": "t1", "taskTitle": "Design review", "durationSeconds": 900, "rateMinor": 8000, "rateCurrency": "EUR", "note": "Feedback round" }
+        ],
+        "lines": [
+          { "description": "Design review\n- Wireframes\n- Feedback round", "quantity": "1.000000", "unitPriceMinor": 8000, "totalMinor": 8000, "sourceCurrency": null, "sourceTotalMinor": null, "fxRate": null, "fxSource": null, "entryIds": ["e1", "e2"] }
+        ],
+        "unpricedEntryIds": []
+      },
+      {
+        "case": "timesheet notes on a single line across tasks: every note carries its task",
+        "grouping": "single",
+        "invoiceCurrency": "EUR",
+        "includeNotes": true,
+        "entries": [
+          { "id": "e1", "userId": "u1", "userName": "Shay", "taskId": "t1", "taskTitle": "A", "durationSeconds": 3600, "rateMinor": 31000, "rateCurrency": "EUR", "note": "Kickoff call" },
+          { "id": "e2", "userId": "u2", "userName": "Mara", "taskId": "t2", "taskTitle": "B", "durationSeconds": 1800, "rateMinor": 31000, "rateCurrency": "EUR", "note": "Spec draft" },
+          { "id": "e3", "userId": "u1", "userName": "Shay", "taskId": "t1", "taskTitle": "A", "durationSeconds": 1800, "rateMinor": 31000, "rateCurrency": "EUR", "note": null }
+        ],
+        "lines": [
+          { "description": "Tracked time\n- A: Kickoff call\n- B: Spec draft", "quantity": "2.000000", "unitPriceMinor": 31000, "totalMinor": 62000, "sourceCurrency": null, "sourceTotalMinor": null, "fxRate": null, "fxSource": null, "entryIds": ["e1", "e2", "e3"] }
+        ],
+        "unpricedEntryIds": []
       }
     ],
     "errors": [

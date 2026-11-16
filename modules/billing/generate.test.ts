@@ -26,6 +26,7 @@ const fixture = JSON.parse(
       invoiceCurrency: string;
       fxRates?: Record<string, FxRateInput>;
       includeTaskList?: boolean;
+      includeNotes?: boolean;
       entries: BillableEntry[];
       lines: GeneratedLine[];
       unpricedEntryIds: string[];
@@ -50,6 +51,7 @@ describe("time-to-line grouping (fixture: time-to-line.json)", () => {
         invoiceCurrency: c.invoiceCurrency,
         fxRates: c.fxRates,
         includeTaskList: c.includeTaskList,
+        includeNotes: c.includeNotes,
       });
       expect(result.ok, c.case).toBe(true);
       if (result.ok) {

@@ -460,6 +460,76 @@ describe("generate lines from unbilled time (integration)", () => {
     expect(lines.length).toBeGreaterThan(0);
   });
 
+  it("lists the entries' timesheet notes in logged order when asked, and Replace rebuilds them", async () => {
+    // Own client so the shared entries above stay out of it.
+    const notesClient = await createClient(db, business.id, user, {
+      name: "Notes Ltd",
+      contacts: [],
+      defaultRateMinor: 2375,
+      defaultRateCurrency: "EUR",
+    });
+    const notesProject = (await createProject(db, business.id, user, {
+      name: "Retainer",
+      clientId: notesClient.id,
+      status: "active",
+    })) as { id: string };
+    const notesTask = (await createTask(db, business.id, notesProject.id, {
+      title: "xWave - Invoice 14",
+      status: "in_progress",
+    })) as { id: string };
+    // Logged out of order on purpose: the line follows startedAt.
+    for (const [day, note] of [
+      ["2026-10-21", "Release notes"],
+      ["2026-10-20", "Fixed login redirect\nCode review"],
+      ["2026-10-22", undefined],
+    ] as const) {
+      await logManualEntry(db, business.id, user, {
+        taskId: notesTask.id,
+        startedAt: new Date(`${day}T09:00:00Z`),
+        durationSeconds: 3600,
+        billable: true,
+        note,
+      });
+    }
+    const draft = await createDraftInvoice(db, business.id, {
+      clientId: notesClient.id,
+      currency: "EUR",
+      taxTreatment: "standard",
+      standardRatePercent: "21",
+    });
+    const invoiceId = (draft as { id: string }).id;
+    const lineDescriptions = async () =>
+      (
+        await db
+          .select({ description: schema.invoiceLine.description })
+          .from(schema.invoiceLine)
+          .where(eq(schema.invoiceLine.invoiceId, invoiceId))
+      ).map((l) => l.description);
+
+    await generateLinesFromUnbilledTime(db, business.id, {
+      invoiceId,
+      grouping: "person_rate",
+      includeTaskList: true,
+    });
+    expect(await lineDescriptions()).toEqual([
+      "Shay - 23.75 EUR/h (xWave - Invoice 14)",
+    ]);
+
+    // Tom's case: the notes were left off the first time, so Replace
+    // with the option on has to rebuild the line with them.
+    const replaced = await generateLinesFromUnbilledTime(db, business.id, {
+      invoiceId,
+      grouping: "person_rate",
+      includeTaskList: true,
+      includeNotes: true,
+      replace: true,
+    });
+    expect(replaced).toMatchObject({ ok: true, lineCount: 1 });
+    expect(await lineDescriptions()).toEqual([
+      "Shay - 23.75 EUR/h (xWave - Invoice 14)\n- Fixed login redirect\n- Code review\n- Release notes",
+    ]);
+  });
+
   it("refuses to add generated lines to an issued invoice", async () => {
     const draft = await createDraftInvoice(db, business.id, {
       clientId: client.id,
