@@ -34,6 +34,7 @@ export function SettingsForm({
     name: string;
     address: string | null;
     postalAddress: PostalAddress | null;
+    einvoicingEnabled: boolean;
     currency: string;
     hoursPerDay: number;
     standardRatePct: string | null;
@@ -51,6 +52,7 @@ export function SettingsForm({
     postalAddressDraft(initial.postalAddress),
   );
   const [postalError, setPostalError] = useState<string | null>(null);
+  const [einvoicing, setEinvoicing] = useState(initial.einvoicingEnabled);
   const [currency, setCurrency] = useState(initial.currency);
   const [hoursPerDay, setHoursPerDay] = useState(String(initial.hoursPerDay));
   const [standardRatePct, setStandardRatePct] = useState(
@@ -61,6 +63,11 @@ export function SettingsForm({
 
   const update = useMutation(
     trpc.business.updateSettings.mutationOptions({
+      onSuccess: () => router.refresh(),
+    }),
+  );
+  const updateEinvoicing = useMutation(
+    trpc.business.updateEinvoicing.mutationOptions({
       onSuccess: () => router.refresh(),
     }),
   );
@@ -86,17 +93,12 @@ export function SettingsForm({
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              setPostalError(null);
-              const postalAddress = postalAddressFromDraft(postal);
-              if ("error" in postalAddress) {
-                setPostalError(postalAddress.error);
-                return;
-              }
               const parsedHours = Number(hoursPerDay);
+              // The structured address is saved from the E-invoicing card,
+              // so it is left out here (= kept).
               update.mutate({
                 name,
                 address: address.trim() || null,
-                postalAddress: postalAddress.value,
                 currency,
                 hoursPerDay:
                   Number.isInteger(parsedHours) && parsedHours >= 1
@@ -131,13 +133,6 @@ export function SettingsForm({
                 Printed on your invoices, exactly as written here
               </p>
             </div>
-            <PostalAddressFields
-              value={postal}
-              onChange={setPostal}
-              freeText={address}
-              countryOptions={countryOptions}
-              error={postalError}
-            />
             <div className="flex flex-col gap-4 sm:flex-row">
               <div className="flex flex-col gap-2 sm:w-64">
                 <Label htmlFor="currency">Base currency</Label>
@@ -201,6 +196,86 @@ export function SettingsForm({
             <div>
               <Button type="submit" disabled={update.isPending}>
                 {update.isPending ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>E-invoicing</CardTitle>
+          <CardDescription>
+            Optional, for businesses established in the EEA (EU, Iceland,
+            Liechtenstein, Norway). Adds the structured address and other
+            fields electronic invoices (EN 16931) need. Your invoice PDFs
+            don&apos;t change
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              setPostalError(null);
+              if (!einvoicing) {
+                updateEinvoicing.mutate({ enabled: false });
+                return;
+              }
+              const postalAddress = postalAddressFromDraft(postal);
+              if ("error" in postalAddress) {
+                setPostalError(postalAddress.error);
+                return;
+              }
+              if (!postalAddress.value) {
+                setPostalError(
+                  "Fill in the business address below to turn on e-invoicing",
+                );
+                return;
+              }
+              updateEinvoicing.mutate({
+                enabled: true,
+                postalAddress: postalAddress.value,
+              });
+            }}
+            className="flex flex-col gap-4"
+          >
+            <label className="flex items-center gap-3 text-sm">
+              <input
+                type="checkbox"
+                checked={einvoicing}
+                onChange={(e) => setEinvoicing(e.target.checked)}
+                className="size-4"
+              />
+              Enable e-invoicing
+            </label>
+            {einvoicing ? (
+              <PostalAddressFields
+                value={postal}
+                onChange={setPostal}
+                freeText={address}
+                countryOptions={countryOptions}
+                error={postalError}
+              />
+            ) : null}
+            {updateEinvoicing.error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {updateEinvoicing.error.message}
+              </p>
+            ) : null}
+            {updateEinvoicing.isSuccess && !updateEinvoicing.isPending ? (
+              <p className="text-sm text-muted-foreground">
+                {updateEinvoicing.data?.einvoicingEnabled
+                  ? "E-invoicing is on"
+                  : "E-invoicing is off"}
+              </p>
+            ) : null}
+            <div>
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={updateEinvoicing.isPending}
+              >
+                {updateEinvoicing.isPending ? "Saving..." : "Save e-invoicing"}
               </Button>
             </div>
           </form>

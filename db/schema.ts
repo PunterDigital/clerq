@@ -47,6 +47,10 @@ export const business = pgTable("business", {
   // country) for e-invoices (EN 16931 BG-5). Optional; the PDF still prints
   // `address`. Shape and validation: lib/postal-address.ts.
   postalAddress: jsonb("postal_address").$type<PostalAddress>(),
+  // Opt-in for e-invoicing (#5065): off by default, and only switched on
+  // for a business whose postal address is in the EEA (lib/eea.ts). While
+  // off, no e-invoicing UI is shown; saved data stays.
+  einvoicingEnabled: boolean("einvoicing_enabled").notNull().default(false),
   // ISO 4217 code for the business's base currency. Stored as data only -
   // all interpretation (conversion, rounding) belongs to the billing module.
   currency: text("currency").notNull(),

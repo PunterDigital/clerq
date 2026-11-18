@@ -20,6 +20,7 @@ export default async function EditClientPage({
 }) {
   const { clientId } = await params;
   let initial: ClientFormValues;
+  const business = await caller.business.current();
   try {
     const client = await caller.clients.get({ clientId });
     initial = {
@@ -50,6 +51,7 @@ export default async function EditClientPage({
         clientId={clientId}
         initial={initial}
         countryOptions={listCountryOptions()}
+        einvoicingEnabled={business?.einvoicingEnabled ?? false}
       />
     </div>
   );

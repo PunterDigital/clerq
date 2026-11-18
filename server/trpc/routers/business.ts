@@ -7,6 +7,7 @@ import {
   normalizePostalAddress,
   postalAddressSchema,
 } from "@/lib/postal-address";
+import { EINVOICING_EEA_ONLY_MESSAGE, isEeaCountry } from "@/lib/eea";
 import { getUserBusinesses, setActiveBusiness } from "@/server/membership";
 import {
   authedProcedure,
@@ -108,6 +109,9 @@ export const businessRouter = createTRPCRouter({
         id: schema.business.id,
         name: schema.business.name,
         currency: schema.business.currency,
+        // Any member may read it: it decides whether forms (clients,
+        // invoices) show e-invoicing fields.
+        einvoicingEnabled: schema.business.einvoicingEnabled,
       })
       .from(schema.business)
       .where(eq(schema.business.id, ctx.businessId));
@@ -120,6 +124,7 @@ export const businessRouter = createTRPCRouter({
         name: schema.business.name,
         address: schema.business.address,
         postalAddress: schema.business.postalAddress,
+        einvoicingEnabled: schema.business.einvoicingEnabled,
         currency: schema.business.currency,
         hoursPerDay: schema.business.hoursPerDay,
         taxConfig: schema.business.taxConfig,
@@ -136,6 +141,7 @@ export const businessRouter = createTRPCRouter({
       name: row.name,
       address: row.address,
       postalAddress: row.postalAddress ?? null,
+      einvoicingEnabled: row.einvoicingEnabled,
       currency: row.currency,
       hoursPerDay: row.hoursPerDay,
       standardRatePct: taxConfig.standardRatePct ?? null,
@@ -171,6 +177,22 @@ export const businessRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // While e-invoicing is on, the business address must stay in the EEA.
+      if (input.postalAddress !== undefined) {
+        const [current] = await getDb()
+          .select({ einvoicingEnabled: schema.business.einvoicingEnabled })
+          .from(schema.business)
+          .where(eq(schema.business.id, ctx.businessId));
+        if (
+          current?.einvoicingEnabled &&
+          !isEeaCountry(normalizePostalAddress(input.postalAddress)?.country)
+        ) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: EINVOICING_EEA_ONLY_MESSAGE,
+          });
+        }
+      }
       const [updated] = await getDb()
         .update(schema.business)
         .set({
@@ -191,6 +213,56 @@ export const businessRouter = createTRPCRouter({
         })
         .where(eq(schema.business.id, ctx.businessId))
         .returning();
+      return updated;
+    }),
+
+  // The e-invoicing opt-in (#5065) and the business's structured address,
+  // saved together from Settings -> E-invoicing. Turning it on needs an EEA
+  // address (the one given here, or the one already saved). Turning it off
+  // keeps the saved address, so turning it back on brings it back.
+  updateEinvoicing: permissionProcedure("settings.edit")
+    .input(
+      z.object({
+        enabled: z.boolean(),
+        // Left out = keep; ignored while turning it off.
+        postalAddress: postalAddressSchema.optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getDb();
+      if (!input.enabled) {
+        const [updated] = await db
+          .update(schema.business)
+          .set({ einvoicingEnabled: false, updatedAt: new Date() })
+          .where(eq(schema.business.id, ctx.businessId))
+          .returning({
+            einvoicingEnabled: schema.business.einvoicingEnabled,
+            postalAddress: schema.business.postalAddress,
+          });
+        return updated;
+      }
+      const [current] = await db
+        .select({ postalAddress: schema.business.postalAddress })
+        .from(schema.business)
+        .where(eq(schema.business.id, ctx.businessId));
+      const postalAddress =
+        input.postalAddress !== undefined
+          ? normalizePostalAddress(input.postalAddress)
+          : (current?.postalAddress ?? null);
+      if (!isEeaCountry(postalAddress?.country)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: EINVOICING_EEA_ONLY_MESSAGE,
+        });
+      }
+      const [updated] = await db
+        .update(schema.business)
+        .set({ einvoicingEnabled: true, postalAddress, updatedAt: new Date() })
+        .where(eq(schema.business.id, ctx.businessId))
+        .returning({
+          einvoicingEnabled: schema.business.einvoicingEnabled,
+          postalAddress: schema.business.postalAddress,
+        });
       return updated;
     }),
 

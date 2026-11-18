@@ -3,18 +3,25 @@ import { Client } from "pg";
 
 import { DEMO_EMAIL, DEMO_STATE } from "./env";
 
-// Card #5038: structured addresses for e-invoicing. A client that only has a
-// free-text address gets a suggested split it can take with one click; the
-// business settings get the same fields. The free text stays what the PDF
-// prints. The client goes straight into the database: what matters here is
-// an existing row from before the feature.
+// Cards #5038 and #5065: structured addresses for e-invoicing, behind the
+// opt-in in Settings -> E-invoicing. While it is off, no e-invoicing field
+// shows anywhere. Turning it on needs an EEA business address. Then a
+// client that only has a free-text address gets a suggested split it can
+// take with one click. The free text stays what the PDF prints. The client
+// goes straight into the database: what matters here is an existing row
+// from before the feature. The tests build on each other (serial).
 test.use({ storageState: DEMO_STATE });
+test.describe.configure({ mode: "serial" });
 
 const clientName = `Postal Client ${Date.now()}`;
 const freeText = "12 Harbour Street\nBristol BS1 4QA\nUnited Kingdom";
 let clientId = "";
 let businessId = "";
-let businessBefore: { address: string | null; postal_address: unknown } | null = null;
+let businessBefore: {
+  address: string | null;
+  postal_address: unknown;
+  einvoicing_enabled: boolean;
+} | null = null;
 
 async function withDb<T>(fn: (db: Client) => Promise<T>): Promise<T> {
   const db = new Client({ connectionString: process.env.DATABASE_URL });
@@ -24,6 +31,18 @@ async function withDb<T>(fn: (db: Client) => Promise<T>): Promise<T> {
   } finally {
     await db.end();
   }
+}
+
+async function businessRow() {
+  const row = await withDb((db) =>
+    db.query<{
+      einvoicing_enabled: boolean;
+      postal_address: { city?: string; country?: string } | null;
+    }>(`select einvoicing_enabled, postal_address from business where id = $1`, [
+      businessId,
+    ]),
+  );
+  return row.rows[0];
 }
 
 test.beforeAll(async () => {
@@ -36,11 +55,19 @@ test.beforeAll(async () => {
       [DEMO_EMAIL],
     );
     businessId = demo.rows[0].business_id;
-    const before = await db.query<{ address: string | null; postal_address: unknown }>(
-      `select address, postal_address from business where id = $1`,
+    const before = await db.query<{
+      address: string | null;
+      postal_address: unknown;
+      einvoicing_enabled: boolean;
+    }>(`select address, postal_address, einvoicing_enabled from business where id = $1`, [
+      businessId,
+    ]);
+    businessBefore = before.rows[0];
+    // Start from the state every existing business is in after the migration.
+    await db.query(
+      `update business set einvoicing_enabled = false, postal_address = null where id = $1`,
       [businessId],
     );
-    businessBefore = before.rows[0];
     const client = await db.query<{ id: string }>(
       `insert into client (business_id, name, address) values ($1, $2, $3) returning id`,
       [businessId, clientName, freeText],
@@ -53,13 +80,14 @@ test.afterAll(async () => {
   await withDb(async (db) => {
     if (businessBefore) {
       await db.query(
-        `update business set address = $2, postal_address = $3 where id = $1`,
+        `update business set address = $2, postal_address = $3, einvoicing_enabled = $4 where id = $1`,
         [
           businessId,
           businessBefore.address,
           businessBefore.postal_address == null
             ? null
             : JSON.stringify(businessBefore.postal_address),
+          businessBefore.einvoicing_enabled,
         ],
       );
     }
@@ -74,6 +102,78 @@ async function postalFields(page: Page) {
     country: await page.getByLabel("Country", { exact: true }).inputValue(),
   };
 }
+
+async function fillBusinessAddress(
+  page: Page,
+  address: { street: string; city: string; postcode: string; country: string },
+) {
+  await page.getByLabel("Street", { exact: true }).fill(address.street);
+  await page.getByLabel("City", { exact: true }).fill(address.city);
+  await page.getByLabel("Postcode", { exact: true }).fill(address.postcode);
+  await page.getByLabel("Country", { exact: true }).selectOption(address.country);
+}
+
+test("e-invoicing is off by default: no e-invoice address anywhere", async ({ page }) => {
+  await page.goto("/settings");
+  await expect(page.getByText("E-invoicing", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Enable e-invoicing")).not.toBeChecked();
+  await expect(page.getByText("Address for e-invoices")).toHaveCount(0);
+  await expect(page.getByLabel("Street", { exact: true })).toHaveCount(0);
+
+  await page.goto(`/clients/${clientId}/edit`);
+  await expect(page.getByLabel("Name", { exact: true })).toBeVisible();
+  await expect(page.getByText("Address for e-invoices")).toHaveCount(0);
+  await expect(page.getByTestId("address-suggestion")).toHaveCount(0);
+
+  await page.goto("/clients/new");
+  await expect(page.getByLabel("Name", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Street", { exact: true })).toHaveCount(0);
+});
+
+test("a business outside the EEA can't turn it on", async ({ page }) => {
+  await page.goto("/settings");
+  await page.getByLabel("Enable e-invoicing").check();
+  await expect(page.getByText("Address for e-invoices")).toBeVisible();
+  await fillBusinessAddress(page, {
+    street: "12 Harbour Street",
+    city: "Bristol",
+    postcode: "BS1 4QA",
+    country: "GB",
+  });
+  await page.getByRole("button", { name: "Save e-invoicing" }).click();
+  await expect(
+    page.getByText(/only for businesses established in the EEA/),
+  ).toBeVisible();
+  expect(await businessRow()).toMatchObject({ einvoicing_enabled: false, postal_address: null });
+});
+
+test("the business settings turn it on with an EEA address", async ({ page }) => {
+  await page.goto("/settings");
+  await page.getByLabel("Enable e-invoicing").check();
+  await fillBusinessAddress(page, {
+    street: "Hauptstraße 5",
+    city: "Berlin",
+    postcode: "10115",
+    country: "DE",
+  });
+  await page.getByRole("button", { name: "Save e-invoicing" }).click();
+  await expect(page.getByText("E-invoicing is on")).toBeVisible();
+
+  await expect
+    .poll(businessRow)
+    .toMatchObject({ einvoicing_enabled: true, postal_address: { city: "Berlin", country: "DE" } });
+
+  await page.reload();
+  await expect(page.getByLabel("Enable e-invoicing")).toBeChecked();
+  await expect(page.getByLabel("Street", { exact: true })).toHaveValue("Hauptstraße 5");
+  await expect(page.getByLabel("Country", { exact: true })).toHaveValue("DE");
+
+  // The Business card's own Save leaves the structured address alone.
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect
+    .poll(businessRow)
+    .toMatchObject({ einvoicing_enabled: true, postal_address: { city: "Berlin" } });
+});
 
 test("an existing client takes the suggested split of its address", async ({ page }) => {
   await page.goto(`/clients/${clientId}/edit`);
@@ -125,27 +225,26 @@ test("a partly filled structured address needs a country", async ({ page }) => {
   await expect(page).toHaveURL(/\/clients\/new$/);
 });
 
-test("the business settings save a structured address", async ({ page }) => {
+test("turning it off hides the fields again and keeps the saved addresses", async ({ page }) => {
   await page.goto("/settings");
-  await page.getByLabel("Street", { exact: true }).fill("Hauptstraße 5");
-  await page.getByLabel("City", { exact: true }).fill("Berlin");
-  await page.getByLabel("Postcode", { exact: true }).fill("10115");
-  await page.getByLabel("Country", { exact: true }).selectOption("DE");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-
+  await page.getByLabel("Enable e-invoicing").uncheck();
+  await expect(page.getByText("Address for e-invoices")).toHaveCount(0);
+  await page.getByRole("button", { name: "Save e-invoicing" }).click();
+  await expect(page.getByText("E-invoicing is off")).toBeVisible();
   await expect
-    .poll(async () => {
-      const row = await withDb((db) =>
-        db.query<{ postal_address: { city?: string; country?: string } | null }>(
-          `select postal_address from business where id = $1`,
-          [businessId],
-        ),
-      );
-      return row.rows[0].postal_address;
-    })
-    .toMatchObject({ city: "Berlin", country: "DE" });
+    .poll(businessRow)
+    .toMatchObject({ einvoicing_enabled: false, postal_address: { country: "DE" } });
 
-  await page.reload();
-  await expect(page.getByLabel("Street", { exact: true })).toHaveValue("Hauptstraße 5");
-  await expect(page.getByLabel("Country", { exact: true })).toHaveValue("DE");
+  // Saving the client with the box hidden keeps its structured address.
+  await page.goto(`/clients/${clientId}/edit`);
+  await expect(page.getByLabel("Street", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page).toHaveURL(new RegExp(`/clients/${clientId}$`));
+  const row = await withDb((db) =>
+    db.query<{ postal_address: { city?: string } | null }>(
+      `select postal_address from client where id = $1`,
+      [clientId],
+    ),
+  );
+  expect(row.rows[0].postal_address?.city).toBe("Bristol");
 });

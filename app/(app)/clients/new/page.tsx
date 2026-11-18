@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { listCountryOptions } from "@/lib/countries";
+import { caller } from "@/server/trpc/server";
 
 import { ClientForm } from "../client-form";
 
@@ -8,11 +9,17 @@ export const metadata: Metadata = {
   title: "New client - Clerq",
 };
 
-export default function NewClientPage() {
+export const dynamic = "force-dynamic";
+
+export default async function NewClientPage() {
+  const business = await caller.business.current();
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
       <h1 className="text-2xl">New client</h1>
-      <ClientForm countryOptions={listCountryOptions()} />
+      <ClientForm
+        countryOptions={listCountryOptions()}
+        einvoicingEnabled={business?.einvoicingEnabled ?? false}
+      />
     </div>
   );
 }
