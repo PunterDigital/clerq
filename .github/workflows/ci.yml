@@ -182,10 +182,22 @@ jobs:
           docker run --rm -v "$PWD:/w:ro" -v "$RUNNER_TEMP:/t" eclipse-temurin:21-jdk
           bash /w/scripts/validate-einvoices.sh /t/einvoices /t/einvoice-tools
 
+      - name: Render the fixture invoices as Factur-X PDFs
+        run: pnpm exec vitest run --project unit server/pdf/facturx.test.tsx
+        env:
+          FACTURX_OUT: ${{ runner.temp }}/facturx
+
+      - name: Validate the PDFs (veraPDF PDF/A-3b + Factur-X EN 16931, Mustang)
+        run: >-
+          docker run --rm -v "$PWD:/w:ro" -v "$RUNNER_TEMP:/t" eclipse-temurin:21-jdk
+          bash /w/scripts/validate-facturx.sh /t/facturx /t/einvoice-tools
+
       - name: Upload the reports
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: einvoice-reports
-          path: ${{ runner.temp }}/einvoices
+          path: |
+            ${{ runner.temp }}/einvoices
+            ${{ runner.temp }}/facturx
           retention-days: 7

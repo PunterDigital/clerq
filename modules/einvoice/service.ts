@@ -1,6 +1,7 @@
 // Loads an invoice with its parties and turns it into a Peppol BIS 3.0
-// UBL e-invoice (#5040). Every caller (the download route, tRPC, REST,
-// MCP) goes through here, so the checks are the same everywhere.
+// UBL e-invoice (#5040), or the CII XML that the invoice PDF embeds as
+// Factur-X (#5041). Every caller (the download routes, tRPC, REST, MCP)
+// goes through here, so the checks are the same everywhere.
 
 import { and, eq } from "drizzle-orm";
 
@@ -8,18 +9,19 @@ import type { Db } from "@/db";
 import { schema } from "@/db";
 import { getInvoice } from "@/modules/billing/lifecycle";
 
-import { buildEinvoiceModel } from "./model";
+import { buildCiiInvoice } from "./cii";
+import { buildEinvoiceModel, type EinvoiceResult } from "./model";
 import { buildUblInvoice } from "./ubl";
 
 export type EinvoiceExport =
   | { ok: true; xml: string; filename: string }
   | { ok: false; missing: string[] };
 
-export async function exportEinvoice(
+async function loadEinvoiceModel(
   db: Db,
   businessId: string,
   invoiceId: string,
-): Promise<EinvoiceExport | null> {
+): Promise<EinvoiceResult | null> {
   const invoice = await getInvoice(db, businessId, invoiceId);
   if (!invoice) {
     return null;
@@ -54,7 +56,7 @@ export async function exportEinvoice(
     return null;
   }
 
-  const result = buildEinvoiceModel({
+  return buildEinvoiceModel({
     invoice,
     business: {
       name: business.name,
@@ -74,7 +76,15 @@ export async function exportEinvoice(
       companyNumber: client.companyNumber,
     },
   });
-  if (!result.ok) {
+}
+
+export async function exportEinvoice(
+  db: Db,
+  businessId: string,
+  invoiceId: string,
+): Promise<EinvoiceExport | null> {
+  const result = await loadEinvoiceModel(db, businessId, invoiceId);
+  if (!result || !result.ok) {
     return result;
   }
   return {
@@ -82,4 +92,18 @@ export async function exportEinvoice(
     xml: buildUblInvoice(result.model),
     filename: `einvoice-${result.model.number}.xml`,
   };
+}
+
+// The Factur-X XML for the invoice PDF, or null when the invoice isn't an
+// exportable e-invoice (e-invoicing off, a draft or void invoice, missing
+// fields): that PDF is then a plain PDF/A-3b, as before. The checks are
+// the XML export's, so a PDF carries Factur-X exactly when the XML
+// download works.
+export async function facturXFor(
+  db: Db,
+  businessId: string,
+  invoiceId: string,
+): Promise<string | null> {
+  const result = await loadEinvoiceModel(db, businessId, invoiceId);
+  return result?.ok ? buildCiiInvoice(result.model) : null;
 }

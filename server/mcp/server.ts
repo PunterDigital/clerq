@@ -1355,7 +1355,7 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
     {
       title: "Get invoice PDF download link",
       description:
-        "Return a short-lived (15 minute) signed URL to download the invoice as a PDF. The link works without a browser login.",
+        "Return a short-lived (15 minute) signed URL to download the invoice as a PDF. The link works without a browser login. The PDF is PDF/A-3b; with e-invoicing on, an issued invoice that get_invoice_einvoice can export is also a Factur-X (EN 16931) e-invoice.",
       inputSchema: { invoiceId: z.string().uuid() },
     },
     ({ invoiceId }) =>
