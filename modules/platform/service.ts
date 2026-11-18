@@ -262,6 +262,7 @@ export async function getPlatformStats(db: Db): Promise<PlatformStats> {
         .select({
           currency: schema.invoice.currency,
           totalMinor: schema.invoice.totalMinor,
+          creditedMinor: schema.invoice.creditedMinor,
           status: schema.invoice.status,
         })
         .from(schema.invoice),
@@ -278,7 +279,11 @@ export async function getPlatformStats(db: Db): Promise<PlatformStats> {
   // matching modules/reports/profit.ts's definition of recognised income.
   const invoiced = invoiceRows
     .filter((inv) => inv.status !== "draft" && inv.status !== "void")
-    .map((inv) => ({ currency: inv.currency, amountMinor: inv.totalMinor }));
+    // Net of credit notes (#5042).
+    .map((inv) => ({
+      currency: inv.currency,
+      amountMinor: inv.totalMinor - inv.creditedMinor,
+    }));
 
   return {
     userCount: userRow?.total ?? 0,
@@ -555,6 +560,7 @@ export async function getBusinessDetail(
       .select({
         currency: schema.invoice.currency,
         totalMinor: schema.invoice.totalMinor,
+        creditedMinor: schema.invoice.creditedMinor,
         status: schema.invoice.status,
       })
       .from(schema.invoice)
@@ -571,7 +577,11 @@ export async function getBusinessDetail(
 
   const invoiced = invoiceRows
     .filter((inv) => inv.status !== "draft" && inv.status !== "void")
-    .map((inv) => ({ currency: inv.currency, amountMinor: inv.totalMinor }));
+    // Net of credit notes (#5042).
+    .map((inv) => ({
+      currency: inv.currency,
+      amountMinor: inv.totalMinor - inv.creditedMinor,
+    }));
 
   return {
     ...business,
