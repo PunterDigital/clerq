@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { expenseStatusSchema } from "@/modules/expenses/service";
 import { taskStatusSchema } from "@/modules/projects/tasks-service";
+import { creditNoteInputSchema } from "@/server/trpc/routers/invoices";
 
 import { SCHEDULE_STATUSES } from "./recurring";
 
@@ -24,6 +25,13 @@ export const invoiceNotesSchema = z.object({
 // POST /invoices/:invoiceId/void
 export const voidInvoiceBodySchema = z.object({
   reason: z.string().trim().max(500).optional(),
+});
+
+// POST /invoices/:invoiceId/credit-notes (#5042): no lines = credit
+// everything left on the invoice.
+export const issueCreditNoteBodySchema = z.object({
+  lines: creditNoteInputSchema.shape.lines,
+  reason: creditNoteInputSchema.shape.reason,
 });
 
 // POST /recurring-invoices/:scheduleId/status

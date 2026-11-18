@@ -145,6 +145,10 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await withDb(async (db) => {
+    // Credit notes first: their lines point at the invoices' lines (#5042).
+    await db.query(`delete from credit_note where invoice_id = any($1::uuid[])`, [
+      [readyInvoiceId, missingInvoiceId].filter(Boolean),
+    ]);
     await db.query(`delete from invoice where id = any($1::uuid[])`, [
       [readyInvoiceId, missingInvoiceId].filter(Boolean),
     ]);
@@ -216,6 +220,40 @@ test("one that can't be exported lists what to add, and offers no download", asy
   expect(pdf.xmp).toContain("<pdfaid:part>3</pdfaid:part>");
   expect(pdf.xmp).not.toContain("fx:");
   expect(pdf.files).toEqual([]);
+});
+
+test("once sent, it is corrected with a credit note that is itself an e-invoice (#5042)", async ({ page }) => {
+  await page.goto(`/invoices/${readyInvoiceId}`);
+  // The XML was downloaded above, so Void is gone.
+  await expect(page.getByText("Sent as an e-invoice, so it can't be voided")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Void invoice" })).toHaveCount(0);
+  const invoiceNumber = (await page.getByRole("heading", { level: 1 }).textContent())!.trim();
+
+  await page.getByRole("button", { name: "Issue credit note" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Issue credit note" }).click();
+  await expect(page).toHaveURL(/\/invoices\/credit-notes\/[0-9a-f-]{36}$/);
+  const number = (await page.getByRole("heading", { level: 1 }).textContent())!.trim();
+  await expect(page.getByLabel("Missing for the e-invoice")).toHaveCount(0);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download e-invoice (XML)" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe(`einvoice-${number}.xml`);
+  const xml = readFileSync((await download.path()) as string, "utf8");
+  expect(xml).toContain('<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"');
+  expect(xml).toContain("<cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>");
+  expect(xml).toContain(
+    `<cac:BillingReference><cac:InvoiceDocumentReference><cbc:ID>${invoiceNumber}</cbc:ID><cbc:IssueDate>2099-01-15</cbc:IssueDate>`,
+  );
+  expect(xml).toContain('<cbc:CreditedQuantity unitCode="HUR">4.083333</cbc:CreditedQuantity>');
+  expect(xml).toContain('<cbc:PayableAmount currencyID="EUR">326.67</cbc:PayableAmount>');
+
+  // Its PDF carries the same credit note as Factur-X (type 381).
+  const pdf = await downloadPdf(page);
+  expect(pdf.filename).toBe(`credit-note-${number}.pdf`);
+  expect(pdf.files).toHaveLength(1);
+  expect(pdf.files[0].xml).toContain("<ram:TypeCode>381</ram:TypeCode>");
+  expect(pdf.files[0].xml).toContain(`<ram:IssuerAssignedID>${invoiceNumber}</ram:IssuerAssignedID>`);
 });
 
 test("with e-invoicing off there's neither a button nor a list", async ({ page }) => {

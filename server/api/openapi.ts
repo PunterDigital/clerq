@@ -30,6 +30,7 @@ import {
   taskStatusBodySchema,
   timeEntryNoteBodySchema,
   timerStartBodySchema,
+  issueCreditNoteBodySchema,
   voidInvoiceBodySchema,
 } from "./schemas";
 import {
@@ -87,7 +88,12 @@ export const API_TAGS = [
   {
     name: "Invoices",
     description:
-      "Only a draft can be changed or deleted; an issued invoice can only be marked paid or voided.",
+      "Only a draft can be changed or deleted; an issued invoice can only be marked paid, voided or credited.",
+  },
+  {
+    name: "Credit notes",
+    description:
+      "Corrections to issued invoices, with their own numbers. They count as negative revenue.",
   },
   { name: "Recurring invoices", description: "Schedules (retainers) that generate invoices." },
   { name: "Expenses", description: "Business expenses. Receipts stay in the app." },
@@ -429,7 +435,48 @@ export const API_OPERATIONS: ApiOperation[] = [
     tag: "Invoices",
     summary: "The invoice as an e-invoice (XML)",
     description:
-      "An issued invoice as a UBL 2.1 e-invoice in the Peppol BIS Billing 3.0 format (application/xml). Needs e-invoicing on in Settings. 422 lists what to fill in first.",
+      "An issued invoice as a UBL 2.1 e-invoice in the Peppol BIS Billing 3.0 format (application/xml). Needs e-invoicing on in Settings. 422 lists what to fill in first. Once downloaded, the invoice can no longer be voided.",
+  },
+  {
+    method: "post",
+    path: "/invoices/{invoiceId}/credit-notes",
+    tag: "Credit notes",
+    summary: "Issue a credit note",
+    description:
+      "Against a sent, overdue or paid invoice. Without lines it credits everything left; with lines (amountMajor per invoice line) it credits part. VAT follows the invoice. When credit notes cover a sent or overdue invoice in full, it becomes credited.",
+    body: issueCreditNoteBodySchema,
+    bodyOptional: true,
+    creates: true,
+    conflict: "The invoice can't be credited: a draft, void, or nothing left.",
+  },
+
+  // -- Credit notes
+  {
+    method: "get",
+    path: "/credit-notes",
+    tag: "Credit notes",
+    summary: "List credit notes",
+    description: "Newest first, with client names and the credited invoice's number.",
+    paged: true,
+    query: {
+      invoiceId: { schema: uuid, description: "Only this invoice's credit notes." },
+      clientId: { schema: uuid, description: "Only this client's credit notes." },
+    },
+  },
+  {
+    method: "get",
+    path: "/credit-notes/{creditNoteId}",
+    tag: "Credit notes",
+    summary: "Get a credit note",
+    description: "With its lines and the credited invoice.",
+  },
+  {
+    method: "get",
+    path: "/credit-notes/{creditNoteId}/einvoice",
+    tag: "Credit notes",
+    summary: "The credit note as an e-invoice (XML)",
+    description:
+      "A UBL 2.1 CreditNote in the Peppol BIS Billing 3.0 format (application/xml) that references the credited invoice. Needs e-invoicing on in Settings. 422 lists what to fill in first.",
   },
 
   // -- Recurring invoices

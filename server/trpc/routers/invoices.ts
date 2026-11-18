@@ -40,7 +40,10 @@ import {
   markInvoicePaid,
   voidInvoice,
 } from "@/modules/billing/lifecycle";
-import { exportEinvoice } from "@/modules/einvoice/service";
+import {
+  exportCreditNoteEinvoice,
+  exportEinvoice,
+} from "@/modules/einvoice/service";
 
 import { createTRPCRouter, permissionProcedure } from "../init";
 
@@ -212,6 +215,22 @@ export const invoicesRouter = createTRPCRouter({
         throw new TRPCError({ code: "NOT_FOUND", message: "No such credit note" });
       }
       return note;
+    }),
+
+  // The credit note as a Peppol BIS 3.0 UBL CreditNote (#5042), or what
+  // to fill in first - the same checks as the invoice export.
+  creditNoteEinvoice: permissionProcedure("invoices.view")
+    .input(z.object({ creditNoteId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const result = await exportCreditNoteEinvoice(
+        getDb(),
+        ctx.businessId,
+        input.creditNoteId,
+      );
+      if (!result) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "No such credit note" });
+      }
+      return result;
     }),
 
   // Issues a credit note against a sent/overdue/paid invoice. Lines left

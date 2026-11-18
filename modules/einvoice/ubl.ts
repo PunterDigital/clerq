@@ -83,8 +83,15 @@ function party(
   );
 }
 
+// Writes a UBL Invoice, or a UBL CreditNote for type 381 (#5042): same
+// content, with the CreditNote root, type code and line elements, and a
+// BillingReference to the credited invoice (BG-3).
 export function buildUblInvoice(model: EinvoiceModel): string {
   const t = model.totals;
+  const credit = model.typeCode === "381";
+  const root = credit ? "CreditNote" : "Invoice";
+  const lineTag = credit ? "cac:CreditNoteLine" : "cac:InvoiceLine";
+  const quantityTag = credit ? "cbc:CreditedQuantity" : "cbc:InvoicedQuantity";
   // Intra-community supply needs where and when it was delivered
   // (BR-IC-11 / BR-IC-12): the invoicing period, or the issue date.
   const delivery =
@@ -110,9 +117,9 @@ export function buildUblInvoice(model: EinvoiceModel): string {
   const lines = model.lines
     .map(
       (line) =>
-        "<cac:InvoiceLine>" +
+        `<${lineTag}>` +
         el("cbc:ID", line.id) +
-        el("cbc:InvoicedQuantity", line.quantity, ` unitCode="${esc(line.unitCode)}"`) +
+        el(quantityTag, line.quantity, ` unitCode="${esc(line.unitCode)}"`) +
         amount("cbc:LineExtensionAmount", line.netMinor, model) +
         "<cac:Item>" +
         el("cbc:Description", line.description) +
@@ -120,26 +127,33 @@ export function buildUblInvoice(model: EinvoiceModel): string {
         taxCategory("cac:ClassifiedTaxCategory", model, false) +
         "</cac:Item>" +
         `<cac:Price><cbc:PriceAmount currencyID="${esc(model.currency)}">${line.price}</cbc:PriceAmount></cac:Price>` +
-        "</cac:InvoiceLine>",
+        `</${lineTag}>`,
     )
     .join("");
 
   return (
     '<?xml version="1.0" encoding="UTF-8"?>\n' +
-    '<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"' +
+    `<${root} xmlns="urn:oasis:names:specification:ubl:schema:xsd:${root}-2"` +
     ' xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"' +
     ' xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">' +
     el("cbc:CustomizationID", PEPPOL_BIS3_CUSTOMIZATION_ID) +
     el("cbc:ProfileID", PEPPOL_BIS3_PROFILE_ID) +
     el("cbc:ID", model.number) +
     el("cbc:IssueDate", model.issueDate) +
-    el("cbc:DueDate", model.dueDate) +
-    el("cbc:InvoiceTypeCode", "380") +
+    // UBL 2.1's CreditNote has no DueDate (and a credit note has none).
+    (credit ? "" : el("cbc:DueDate", model.dueDate)) +
+    el(credit ? "cbc:CreditNoteTypeCode" : "cbc:InvoiceTypeCode", model.typeCode) +
     el("cbc:Note", model.note) +
     el("cbc:DocumentCurrencyCode", model.currency) +
     el("cbc:BuyerReference", model.buyerReference) +
     (model.period
       ? `<cac:InvoicePeriod>${el("cbc:StartDate", model.period.start)}${el("cbc:EndDate", model.period.end)}</cac:InvoicePeriod>`
+      : "") +
+    (model.precedingInvoice
+      ? "<cac:BillingReference><cac:InvoiceDocumentReference>" +
+        el("cbc:ID", model.precedingInvoice.number) +
+        el("cbc:IssueDate", model.precedingInvoice.issueDate) +
+        "</cac:InvoiceDocumentReference></cac:BillingReference>"
       : "") +
     party("cac:AccountingSupplierParty", model.seller) +
     party("cac:AccountingCustomerParty", model.buyer) +
@@ -160,6 +174,6 @@ export function buildUblInvoice(model: EinvoiceModel): string {
     amount("cbc:PayableAmount", t.payableMinor, model) +
     "</cac:LegalMonetaryTotal>" +
     lines +
-    "</Invoice>\n"
+    `</${root}>\n`
   );
 }

@@ -71,6 +71,12 @@ const voidRoute = () => import("@/app/api/v1/invoices/[invoiceId]/void/route");
 const duplicateRoute = () => import("@/app/api/v1/invoices/[invoiceId]/duplicate/route");
 const pdfLinkRoute = () => import("@/app/api/v1/invoices/[invoiceId]/pdf-link/route");
 const einvoiceRoute = () => import("@/app/api/v1/invoices/[invoiceId]/einvoice/route");
+const creditInvoiceRoute = () =>
+  import("@/app/api/v1/invoices/[invoiceId]/credit-notes/route");
+const creditNotesRoute = () => import("@/app/api/v1/credit-notes/route");
+const creditNoteRoute = () => import("@/app/api/v1/credit-notes/[creditNoteId]/route");
+const creditNoteEinvoiceRoute = () =>
+  import("@/app/api/v1/credit-notes/[creditNoteId]/einvoice/route");
 const schedulesRoute = () => import("@/app/api/v1/recurring-invoices/route");
 const scheduleRoute = () => import("@/app/api/v1/recurring-invoices/[scheduleId]/route");
 const scheduleInvoicesRoute = () =>
@@ -489,6 +495,82 @@ describe("/api/v1/invoices", () => {
     });
     expect(bad.status).toBe(422);
     expect(bad.body.error.message).toMatch(/^grouping: /);
+  });
+
+  it("issues credit notes, partly then in full, and lists and reads them (#5042)", async () => {
+    const clientId = await makeClient(writeA, "Credit Co");
+    const invoiceId = await makeDraft(writeA, clientId);
+    await addLine(writeA, invoiceId, "100.00");
+    await addLine(writeA, invoiceId, "50.00");
+    const { POST: credit } = await creditInvoiceRoute();
+    const creditIt = (key: string, body?: unknown) =>
+      call(credit, "POST", `/api/v1/invoices/${invoiceId}/credit-notes`, key, {
+        params: { invoiceId },
+        body,
+      });
+
+    // A draft can't be credited.
+    expect((await creditIt(writeA)).status).toBe(409);
+    expect((await issue(writeA, invoiceId)).status).toBe(200);
+    const { GET: getInvoice } = await invoiceRoute();
+    const invoice = await call(getInvoice, "GET", `/api/v1/invoices/${invoiceId}`, readA, {
+      params: { invoiceId },
+    });
+    const [first] = invoice.body.lines as { id: string }[];
+
+    // Read-only keys can't issue; more than a line has left is a 422.
+    expect((await creditIt(readA)).status).toBe(403);
+    const over = await creditIt(writeA, { lines: [{ invoiceLineId: first.id, amountMajor: "100.01" }] });
+    expect(over.status).toBe(422);
+    expect(over.body.error.message).toMatch(/left to credit/);
+
+    const partial = await creditIt(writeA, {
+      lines: [{ invoiceLineId: first.id, amountMajor: "40.00" }],
+      reason: "Wrong rate",
+    });
+    expect(partial.status).toBe(201);
+    expect(partial.body).toMatchObject({ totalMinor: 4000, reason: "Wrong rate", invoiceId });
+    expect(partial.body.number).toMatch(/^CN-\d{4}-\d{4}$/);
+
+    // No body: everything left.
+    const rest = await creditIt(writeA);
+    expect(rest.status).toBe(201);
+    expect(rest.body.totalMinor).toBe(11000);
+    const after = await call(getInvoice, "GET", `/api/v1/invoices/${invoiceId}`, readA, {
+      params: { invoiceId },
+    });
+    expect(after.body).toMatchObject({ status: "credited", creditedMinor: 15000 });
+    expect((await creditIt(writeA)).status).toBe(409);
+
+    const { GET: list } = await creditNotesRoute();
+    const listed = await call(list, "GET", `/api/v1/credit-notes?invoiceId=${invoiceId}`, readA);
+    expect(listed.status).toBe(200);
+    expect(listed.body.data.map((n: { number: string }) => n.number).sort()).toEqual(
+      [partial.body.number, rest.body.number].sort(),
+    );
+    expect(listed.body.data[0]).toMatchObject({ clientName: "Credit Co", invoiceNumber: invoice.body.number });
+
+    const { GET: getNote } = await creditNoteRoute();
+    const note = await call(getNote, "GET", `/api/v1/credit-notes/${partial.body.id}`, readA, {
+      params: { creditNoteId: partial.body.id },
+    });
+    expect(note.status).toBe(200);
+    expect(note.body.lines).toHaveLength(1);
+    expect(note.body.invoiceNumber).toBe(invoice.body.number);
+    // Another business's key gets nothing.
+    expect(
+      (await call(getNote, "GET", `/api/v1/credit-notes/${partial.body.id}`, writeB, {
+        params: { creditNoteId: partial.body.id },
+      })).status,
+    ).toBe(404);
+
+    // With e-invoicing off the XML isn't available, and says why.
+    const { GET: einvoice } = await creditNoteEinvoiceRoute();
+    const xml = await call(einvoice, "GET", `/api/v1/credit-notes/${partial.body.id}/einvoice`, readA, {
+      params: { creditNoteId: partial.body.id },
+    });
+    expect(xml.status).toBe(422);
+    expect(xml.body.error.message).toMatch(/Turn on e-invoicing/);
   });
 
   it("keeps read-only keys and other businesses out", async () => {

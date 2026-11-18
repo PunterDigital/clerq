@@ -196,3 +196,38 @@ describe("UBL writer", () => {
     expect(xml).toContain('<cbc:PayableAmount currencyID="JPY">120000</cbc:PayableAmount>');
   });
 });
+
+describe("credit notes as e-invoices (#5042)", () => {
+  it("writes a UBL CreditNote that references the credited invoice", () => {
+    const m = model(fixture("credit-note"));
+    expect(m.typeCode).toBe("381");
+    expect(m.precedingInvoice).toEqual({ number: "2026-0001", issueDate: "2026-06-11" });
+    // Nothing is due on a credit note; the payment means stay (DE-R-001).
+    expect(m.dueDate).toBeNull();
+    expect(m.payment).toMatchObject({ iban: "DE89370400440532013000" });
+    const xml = buildUblInvoice(m);
+    expect(xml).toContain('<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"');
+    expect(xml).toContain("<cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>");
+    expect(xml).toContain(
+      "<cac:BillingReference><cac:InvoiceDocumentReference><cbc:ID>2026-0001</cbc:ID><cbc:IssueDate>2026-06-11</cbc:IssueDate></cac:InvoiceDocumentReference></cac:BillingReference>",
+    );
+    expect(xml).toContain('<cac:CreditNoteLine><cbc:ID>1</cbc:ID><cbc:CreditedQuantity unitCode="C62">1</cbc:CreditedQuantity>');
+    expect(xml).toContain('<cbc:PayableAmount currencyID="EUR">297.50</cbc:PayableAmount>');
+    expect(xml).not.toContain("InvoiceLine");
+    expect(xml).not.toContain("DueDate");
+    expect(xml.trim().endsWith("</CreditNote>")).toBe(true);
+  });
+
+  it("asks a German credit note for an IBAN too (DE-R-001)", () => {
+    const source = fixture("credit-note");
+    source.business.iban = null;
+    expect(missing(source).join(" ")).toMatch(/IBAN/);
+  });
+
+  it("keeps invoices as type 380 with no billing reference", () => {
+    const xml = buildUblInvoice(model(fixture("standard-rate")));
+    expect(xml).toContain("<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>");
+    expect(xml).not.toContain("BillingReference");
+    expect(xml.trim().endsWith("</Invoice>")).toBe(true);
+  });
+});

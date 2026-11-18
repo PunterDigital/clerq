@@ -56,3 +56,20 @@ describe("CII writer (#5041)", () => {
     expect(cii(fixture("zero-rated"))).not.toContain("SpecifiedTradeSettlementPaymentMeans");
   });
 });
+
+describe("CII credit notes (#5042)", () => {
+  it("writes type 381 with the credited invoice after the totals", () => {
+    const xml = cii(fixture("credit-note"));
+    expect(xml).toContain("<ram:TypeCode>381</ram:TypeCode>");
+    expect(xml).toContain(
+      '</ram:SpecifiedTradeSettlementHeaderMonetarySummation><ram:InvoiceReferencedDocument><ram:IssuerAssignedID>2026-0001</ram:IssuerAssignedID><ram:FormattedIssueDateTime><qdt:DateTimeString format="102">20260611</qdt:DateTimeString></ram:FormattedIssueDateTime></ram:InvoiceReferencedDocument>',
+    );
+    expect(xml).not.toContain("DueDateDateTime");
+  });
+
+  it("keeps invoices as type 380", () => {
+    const xml = cii(fixture("standard-rate"));
+    expect(xml).toContain("<ram:TypeCode>380</ram:TypeCode>");
+    expect(xml).not.toContain("InvoiceReferencedDocument");
+  });
+});
