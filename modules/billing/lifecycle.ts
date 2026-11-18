@@ -4,7 +4,7 @@
 // so reads are the source of truth and stay cheap and scoped. paid is a
 // terminal state set explicitly.
 
-import { and, desc, eq, ilike, inArray, lt, or } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, lt, or } from "drizzle-orm";
 
 import type { Db } from "@/db";
 import { schema } from "@/db";
@@ -55,6 +55,8 @@ export async function listInvoices(
       status: schema.invoice.status,
       currency: schema.invoice.currency,
       totalMinor: schema.invoice.totalMinor,
+      // Covered by credit notes (#5042); the client owes the difference.
+      creditedMinor: schema.invoice.creditedMinor,
       issueDate: schema.invoice.issueDate,
       dueDate: schema.invoice.dueDate,
       clientId: schema.invoice.clientId,
@@ -133,7 +135,8 @@ export async function markInvoicePaid(
   return updatedOverdue ?? null;
 }
 
-// sent or overdue -> void. A voided invoice keeps its number (it remains a
+// sent or overdue -> void, for invoices that never went out as an
+// e-invoice and have no credit notes (#5042). A voided invoice keeps its number (it remains a
 // real document in the sequence) but no longer counts as revenue. void is
 // terminal: paid invoices stay locked (money moved against them) and drafts
 // are edited, not voided. The status guard is in SQL so a concurrent
@@ -165,6 +168,10 @@ export async function voidInvoice(
           eq(schema.invoice.businessId, businessId),
           eq(schema.invoice.id, invoiceId),
           inArray(schema.invoice.status, ["sent", "overdue"]),
+          // Once it went out as an e-invoice, or has credit notes, a
+          // correction is a credit note instead (#5042).
+          isNull(schema.invoice.einvoiceSentAt),
+          eq(schema.invoice.creditedMinor, 0),
         ),
       )
       .returning();

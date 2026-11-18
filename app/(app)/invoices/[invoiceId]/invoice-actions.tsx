@@ -24,10 +24,17 @@ export function InvoiceActions({
   invoiceId,
   status,
   hasLines,
+  canVoid = false,
+  creditNote = null,
 }: {
   invoiceId: string;
-  status: "draft" | "sent" | "paid" | "overdue" | "void";
+  status: "draft" | "sent" | "paid" | "overdue" | "void" | "credited";
   hasLines: boolean;
+  // Void only while the invoice never went out as an e-invoice and has no
+  // credit notes (#5042); otherwise corrections are credit notes.
+  canVoid?: boolean;
+  // The "Issue credit note" dialog, when the invoice can still be credited.
+  creditNote?: React.ReactNode;
 }) {
   const router = useRouter();
   const trpc = useTRPC();
@@ -78,6 +85,7 @@ export function InvoiceActions({
             {markPaid.isPending ? "Recording..." : "Mark as paid"}
           </Button>
         ) : null}
+        {creditNote}
         <DuplicateButton invoiceId={invoiceId} />
       </div>
       {markPaid.error ? (
@@ -85,7 +93,7 @@ export function InvoiceActions({
           {markPaid.error.message}
         </p>
       ) : null}
-      {status === "sent" || status === "overdue" ? (
+      {canVoid && (status === "sent" || status === "overdue") ? (
         <VoidControl invoiceId={invoiceId} />
       ) : null}
     </div>

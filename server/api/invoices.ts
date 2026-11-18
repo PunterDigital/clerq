@@ -9,6 +9,7 @@ export const INVOICE_STATUSES = [
   "paid",
   "overdue",
   "void",
+  "credited",
 ] as const satisfies readonly InvoiceStatus[];
 
 export const INVOICE_DATE_FIELDS = [

@@ -1384,7 +1384,7 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
     },
     ({ invoiceId }) =>
       runTool(async () =>
-        toolJson(await caller.invoices.einvoice({ invoiceId })),
+        toolJson(await caller.invoices.einvoice({ invoiceId, download: true })),
       ),
   );
 

@@ -18,7 +18,7 @@ function addressLines(address: string | null | undefined): string[] {
 
 type InvoiceRecord = {
   number: string | null;
-  status: "draft" | "sent" | "paid" | "overdue" | "void";
+  status: "draft" | "sent" | "paid" | "overdue" | "void" | "credited";
   currency: string;
   issueDate: Date | null;
   dueDate: Date | null;
@@ -81,6 +81,11 @@ export type InvoicePdfData = {
   // The headline amount due, shown prominently as "Balance Due" in the PDF
   // header, formatted with the currency code after it ("10,000.00 EUR").
   balanceDueLabel: string;
+  // Caption over that amount: "Balance Due", or "Amount Credited" on a
+  // credit note (#5042).
+  balanceCaption: string;
+  // On a credit note: the invoice it credits ("2026-0012 of 3 March 2026").
+  creditsInvoiceLabel: string | null;
   taxNote: string | null;
   notes: string | null;
   // "IBAN DE89 3704 ..." / "BIC COBADEFFXXX" rows under Payment details;
@@ -164,11 +169,86 @@ export function buildInvoicePdfData(input: {
     taxAmountLabel: formatMoney(invoice.taxMinor, invoice.currency),
     totalLabel: formatMoney(invoice.totalMinor, invoice.currency),
     balanceDueLabel: formatMoneyCode(invoice.totalMinor, invoice.currency),
+    balanceCaption: "Balance Due",
+    creditsInvoiceLabel: null,
     taxNote: invoice.taxNote,
     notes: invoice.notes,
     paymentLines: [
       ...(business.iban ? [`IBAN ${formatIban(business.iban)}`] : []),
       ...(business.bic ? [`BIC ${business.bic}`] : []),
     ],
+  };
+}
+
+type BusinessParty = Parameters<typeof buildInvoicePdfData>[0]["business"];
+type ClientParty = Parameters<typeof buildInvoicePdfData>[0]["client"];
+
+// A credit note (#5042) lays out like an invoice: same parties, lines and
+// tax rows, titled "Credit note CN-...", with the credited invoice named,
+// the reason as its note, and no due date or payment details (nothing is
+// owed on a credit note).
+export function buildCreditNotePdfData(input: {
+  creditNote: {
+    number: string;
+    currency: string;
+    issueDate: Date;
+    taxTreatment: "standard" | "zero_rated" | "reverse_charge";
+    taxRatePercent: string;
+    taxNote: string | null;
+    buyerReference: string | null;
+    subtotalMinor: number;
+    taxMinor: number;
+    totalMinor: number;
+    reason: string | null;
+    lines: {
+      description: string;
+      quantity: string | null;
+      unitPriceMinor: number | null;
+      totalMinor: number;
+    }[];
+  };
+  invoiceNumber: string | null;
+  invoiceIssueDate: Date | null;
+  business: BusinessParty;
+  client: ClientParty;
+}): InvoicePdfData {
+  const { creditNote } = input;
+  const base = buildInvoicePdfData({
+    invoice: {
+      number: creditNote.number,
+      status: "sent",
+      currency: creditNote.currency,
+      issueDate: creditNote.issueDate,
+      dueDate: null,
+      periodStart: null,
+      periodEnd: null,
+      taxTreatment: creditNote.taxTreatment,
+      taxRatePercent: creditNote.taxRatePercent,
+      taxNote: creditNote.taxNote,
+      buyerReference: creditNote.buyerReference,
+      subtotalMinor: creditNote.subtotalMinor,
+      taxMinor: creditNote.taxMinor,
+      totalMinor: creditNote.totalMinor,
+      notes: creditNote.reason ? `Reason: ${creditNote.reason}` : null,
+      lines: creditNote.lines.map((line) => ({
+        ...line,
+        sourceCurrency: null,
+        sourceTotalMinor: null,
+        fxRate: null,
+        fxSource: null,
+      })),
+    },
+    business: { ...input.business, iban: null, bic: null },
+    client: input.client,
+  });
+  return {
+    ...base,
+    title: `Credit note ${creditNote.number}`,
+    balanceCaption: "Amount Credited",
+    creditsInvoiceLabel: input.invoiceNumber
+      ? input.invoiceIssueDate
+        ? `${input.invoiceNumber} of ${formatDateFull(input.invoiceIssueDate)}`
+        : input.invoiceNumber
+      : null,
   };
 }

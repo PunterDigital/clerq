@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
+import { recordEinvoiceSent } from "@/modules/billing/credit-notes";
 import { getInvoice } from "@/modules/billing/lifecycle";
 import { buildInvoicePdfData } from "@/modules/billing/pdf-data";
 import { facturXFor } from "@/modules/einvoice/service";
@@ -104,6 +105,10 @@ export async function GET(
   const facturX =
     invoice.status === "draft" ? null : await facturXFor(db, businessId, invoiceId);
   const pdf = await buildInvoicePdf(data, { facturX });
+  if (facturX) {
+    // A PDF carrying Factur-X is an e-invoice once it leaves (#5042).
+    await recordEinvoiceSent(db, businessId, invoiceId);
+  }
   const filename = invoice.number
     ? `invoice-${invoice.number}.pdf`
     : "draft-invoice.pdf";

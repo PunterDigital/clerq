@@ -152,8 +152,10 @@ key's creator may view profit.
 
 ## Invoices
 
-Statuses are `draft`, `sent`, `overdue`, `paid` and `void`. Only a draft can be
-changed or deleted; once issued, an invoice can only be marked paid or voided.
+Statuses are `draft`, `sent`, `overdue`, `paid`, `void` and `credited`. Only a
+draft can be changed or deleted; once issued, an invoice can only be marked paid,
+voided or credited. `credited` means credit notes (issued in the app) cover the
+whole total; `creditedMinor` on an invoice is how much they cover so far.
 A change the status doesn't allow is a 409.
 
 | Method and path | What it does |
@@ -169,10 +171,10 @@ A change the status doesn't allow is a 409.
 | `POST /invoices/{id}/generate-from-time` | Fill a draft from the client's unbilled billable time: `grouping` (`person_rate`, `task`, `single`) required; `projectId`, `includeTaskList` (task titles in each description), `includeNotes` (timesheet notes under each description), `replace` (regenerate the time lines), `fxRates` |
 | `POST /invoices/{id}/issue` | Number the draft and mark it sent |
 | `POST /invoices/{id}/mark-paid` | Mark a sent or overdue invoice paid |
-| `POST /invoices/{id}/void` | Void a sent or overdue invoice, optionally `{ "reason": "..." }`. It keeps its number; its time goes back to unbilled |
+| `POST /invoices/{id}/void` | Void a sent or overdue invoice, optionally `{ "reason": "..." }`. It keeps its number; its time goes back to unbilled. 409 once the invoice has gone out as an e-invoice (XML downloaded, or a Factur-X PDF) or has a credit note: correct it with a credit note instead |
 | `POST /invoices/{id}/duplicate` | Copy any invoice into a new draft |
 | `GET /invoices/{id}/pdf-link` | `{ "url", "invoiceNumber", "expiresInSeconds" }`: a link that downloads the PDF without a key or login, for 15 minutes. The PDF is PDF/A-3b; with e-invoicing on, an issued invoice that the e-invoice export accepts is also a Factur-X / ZUGFeRD invoice (EN 16931 profile, `factur-x.xml` inside) |
-| `GET /invoices/{id}/einvoice` | The issued invoice as a Peppol BIS Billing 3.0 UBL e-invoice (`application/xml`). Needs e-invoicing on in Settings; 422 lists what to fill in first |
+| `GET /invoices/{id}/einvoice` | The issued invoice as a Peppol BIS Billing 3.0 UBL e-invoice (`application/xml`). Needs e-invoicing on in Settings; 422 lists what to fill in first. Once downloaded, the invoice counts as sent as an e-invoice and can no longer be voided |
 
 Line amounts are sent as `amountMajor`, a plain decimal string in the
 invoice's currency (`"1500"` or `"1500.00"`), and come back in minor units

@@ -14,7 +14,7 @@ export type TaxTreatment = "standard" | "zero_rated" | "reverse_charge";
 export type EinvoiceSource = {
   invoice: {
     number: string | null;
-    status: "draft" | "sent" | "paid" | "overdue" | "void";
+    status: "draft" | "sent" | "paid" | "overdue" | "void" | "credited";
     currency: string;
     issueDate: Date | null;
     dueDate: Date | null;

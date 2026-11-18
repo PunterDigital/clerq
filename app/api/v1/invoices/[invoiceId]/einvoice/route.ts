@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export const GET = apiRoute<{ invoiceId: string }>(async (_req, { caller, params }) => {
   const invoiceId = idParam(params.invoiceId, "invoice");
-  const result = await caller.invoices.einvoice({ invoiceId });
+  const result = await caller.invoices.einvoice({ invoiceId, download: true });
   if (!result.ok) {
     throw new ApiError(422, `Can't export this invoice yet: ${result.missing.join("; ")}`);
   }

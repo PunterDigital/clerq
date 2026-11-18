@@ -71,7 +71,14 @@ export function foldConvertedTotal(
       });
       return null;
     }
-    return convertMinor(row.amountMinor, rate, row.currency, targetCurrency);
+    // Credit notes come in negative; convertMinor takes amounts >= 0.
+    const converted = convertMinor(
+      Math.abs(row.amountMinor),
+      rate,
+      row.currency,
+      targetCurrency,
+    );
+    return row.amountMinor < 0 ? -converted : converted;
   };
 
   const sum = (rows: DatedRow[]) =>
@@ -143,6 +150,19 @@ export async function profitTotalSummary(
     .from(schema.invoice)
     .where(and(...invoiceScope));
 
+  // Credit notes (#5042) are negative revenue on their own issue date.
+  const creditScope = [eq(schema.creditNote.businessId, businessId)];
+  if (range.from) creditScope.push(gte(schema.creditNote.issueDate, range.from));
+  if (range.to) creditScope.push(lt(schema.creditNote.issueDate, range.to));
+  const creditRows = await db
+    .select({
+      currency: schema.creditNote.currency,
+      totalMinor: schema.creditNote.totalMinor,
+      issueDate: schema.creditNote.issueDate,
+    })
+    .from(schema.creditNote)
+    .where(and(...creditScope));
+
   const expenseScope = [eq(schema.expense.businessId, businessId)];
   if (range.from) expenseScope.push(gte(schema.expense.incurredAt, range.from));
   if (range.to) expenseScope.push(lt(schema.expense.incurredAt, range.to));
@@ -182,11 +202,18 @@ export async function profitTotalSummary(
     .innerJoin(schema.invoice, eq(schema.invoiceLine.invoiceId, schema.invoice.id))
     .where(and(...labourScope));
 
-  const income: DatedRow[] = invoiceRows.map((r) => ({
-    currency: r.currency,
-    amountMinor: r.totalMinor,
-    date: r.issueDate as Date,
-  }));
+  const income: DatedRow[] = [
+    ...invoiceRows.map((r) => ({
+      currency: r.currency,
+      amountMinor: r.totalMinor,
+      date: r.issueDate as Date,
+    })),
+    ...creditRows.map((r) => ({
+      currency: r.currency,
+      amountMinor: -r.totalMinor,
+      date: r.issueDate,
+    })),
+  ];
   const expenses: DatedRow[] = expenseRows.map((r) => ({
     currency: r.currency,
     amountMinor: r.amountMinor,

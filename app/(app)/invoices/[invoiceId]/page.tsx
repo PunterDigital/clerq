@@ -12,6 +12,7 @@ import { minorToMajor } from "@/modules/billing/currency";
 import { caller } from "@/server/trpc/server";
 
 import { AddLineForm } from "./add-line-form";
+import { CreditNoteDialog } from "./credit-note-dialog";
 import { DetailsForm } from "./details-form";
 import { GeneratePanel } from "./generate-panel";
 import {
@@ -55,6 +56,10 @@ export default async function InvoiceDetailPage({
       ? await caller.invoices.einvoice({ invoiceId: invoice.id })
       : null;
   const isDraft = invoice.status === "draft";
+  // Credit notes against this invoice and what is left to credit (#5042).
+  const credits = isDraft
+    ? null
+    : await caller.invoices.credits({ invoiceId: invoice.id });
 
   return (
     <div className="flex flex-col gap-6">
@@ -111,6 +116,23 @@ export default async function InvoiceDetailPage({
             invoiceId={invoice.id}
             status={invoice.status}
             hasLines={invoice.lines.length > 0}
+            canVoid={credits?.canVoid ?? false}
+            creditNote={
+              credits?.canCredit ? (
+                <CreditNoteDialog
+                  invoiceId={invoice.id}
+                  invoiceNumber={invoice.number}
+                  currency={invoice.currency}
+                  lines={credits.lines}
+                  taxLabel={
+                    invoice.taxTreatment === "standard" &&
+                    invoice.taxRatePercent !== "0"
+                      ? `plus VAT at ${invoice.taxRatePercent}%`
+                      : null
+                  }
+                />
+              ) : null
+            }
           />
         </div>
       </div>
@@ -236,6 +258,43 @@ export default async function InvoiceDetailPage({
         </div>
 
         <div className="flex flex-col gap-6">
+          {credits && credits.creditNotes.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Credit notes</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="flex flex-col" aria-label="Credit notes">
+                  {credits.creditNotes.map((note) => (
+                    <li
+                      key={note.id}
+                      className="flex items-baseline justify-between gap-3 border-b py-2 text-sm last:border-b-0"
+                    >
+                      <Link
+                        href={`/invoices/credit-notes/${note.id}`}
+                        className="font-medium underline-offset-4 hover:underline"
+                      >
+                        {note.number}
+                      </Link>
+                      <span className="text-muted-foreground">
+                        {formatDate(note.issueDate)}
+                      </span>
+                      <span className="tabular">
+                        -{formatMoney(note.totalMinor, invoice.currency)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          ) : null}
+          {credits?.einvoiceSent &&
+          (invoice.status === "sent" || invoice.status === "overdue") ? (
+            <p className="text-sm text-muted-foreground">
+              Sent as an e-invoice, so it can&apos;t be voided: correct it
+              with a credit note.
+            </p>
+          ) : null}
           {einvoice && !einvoice.ok ? (
             <Card>
               <CardHeader>
@@ -280,6 +339,25 @@ export default async function InvoiceDetailPage({
                   {formatMoney(invoice.totalMinor, invoice.currency)}
                 </span>
               </div>
+              {invoice.creditedMinor > 0 ? (
+                <>
+                  <div className="flex items-baseline justify-between text-sm">
+                    <span className="text-muted-foreground">Credited</span>
+                    <span className="tabular">
+                      -{formatMoney(invoice.creditedMinor, invoice.currency)}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between text-sm font-semibold">
+                    <span>Balance</span>
+                    <span className="tabular">
+                      {formatMoney(
+                        invoice.totalMinor - invoice.creditedMinor,
+                        invoice.currency,
+                      )}
+                    </span>
+                  </div>
+                </>
+              ) : null}
               {invoice.taxNote ? (
                 <p className="pt-1 text-xs text-muted-foreground">
                   {invoice.taxNote}

@@ -24,7 +24,9 @@ export const dashboardRouter = createTRPCRouter({
     for (const inv of outstanding) {
       outstandingByCurrency.set(
         inv.currency,
-        (outstandingByCurrency.get(inv.currency) ?? 0) + inv.totalMinor,
+        (outstandingByCurrency.get(inv.currency) ?? 0) +
+          inv.totalMinor -
+          inv.creditedMinor,
       );
     }
 

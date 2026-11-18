@@ -218,6 +218,13 @@
       "when": 1795004995322,
       "tag": "0030_einvoice_contact",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1795018036520,
+      "tag": "0031_credit_notes",
+      "breakpoints": true
     }
   ]
 }

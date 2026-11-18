@@ -8,6 +8,16 @@ import {
   unitCodeSchema,
   vatexCodeSchema,
 } from "@/lib/einvoice-codes";
+import {
+  CREDIT_NOTE_PREFIX_PATTERN,
+  getCreditNote,
+  getInvoiceCredits,
+  issueCreditNote,
+  listCreditNotes,
+  recordEinvoiceSent,
+  voidBlockedReason,
+} from "@/modules/billing/credit-notes";
+import { majorToMinor } from "@/modules/billing/currency";
 import { fetchEcbRate } from "@/modules/billing/fx";
 import {
   addManualLine,
@@ -42,6 +52,23 @@ function found<T>(row: T | null): T {
 }
 
 const treatmentSchema = z.enum(["standard", "zero_rated", "reverse_charge"]);
+
+// Lines to credit, as major-unit amounts ("120.50"); left out = credit
+// everything that is left on the invoice.
+export const creditNoteInputSchema = z.object({
+  invoiceId: z.string().uuid(),
+  lines: z
+    .array(
+      z.object({
+        invoiceLineId: z.string().uuid(),
+        amountMajor: z.string().trim().min(1),
+      }),
+    )
+    .min(1)
+    .max(500)
+    .optional(),
+  reason: z.string().trim().max(500).optional(),
+});
 
 // A billing period is a range: both ends together and in order, so a
 // half-set period can never reach the PDF.
@@ -146,11 +173,89 @@ export const invoicesRouter = createTRPCRouter({
 
   // The invoice as a Peppol BIS 3.0 UBL e-invoice (#5040): the XML, or the
   // list of what to fill in first (drafts, missing addresses, IDs...).
+  // download: the caller hands the XML on (REST, MCP), so the invoice now
+  // counts as sent as an e-invoice and can no longer be voided (#5042).
+  // The invoice page leaves it out: it only checks what's missing.
   einvoice: permissionProcedure("invoices.view")
+    .input(
+      z.object({
+        invoiceId: z.string().uuid(),
+        download: z.boolean().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const result = found(
+        await exportEinvoice(getDb(), ctx.businessId, input.invoiceId),
+      );
+      if (result.ok && input.download) {
+        await recordEinvoiceSent(getDb(), ctx.businessId, input.invoiceId);
+      }
+      return result;
+    }),
+
+  // An invoice's credit notes and what is left to credit per line (#5042).
+  credits: permissionProcedure("invoices.view")
     .input(z.object({ invoiceId: z.string().uuid() }))
     .query(async ({ ctx, input }) =>
-      found(await exportEinvoice(getDb(), ctx.businessId, input.invoiceId)),
+      found(await getInvoiceCredits(getDb(), ctx.businessId, input.invoiceId)),
     ),
+
+  creditNotes: permissionProcedure("invoices.view").query(({ ctx }) =>
+    listCreditNotes(getDb(), ctx.businessId),
+  ),
+
+  creditNote: permissionProcedure("invoices.view")
+    .input(z.object({ creditNoteId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const note = await getCreditNote(getDb(), ctx.businessId, input.creditNoteId);
+      if (!note) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "No such credit note" });
+      }
+      return note;
+    }),
+
+  // Issues a credit note against a sent/overdue/paid invoice. Lines left
+  // out credit everything that is left (a full credit). Same permission
+  // as voiding: both close out an issued invoice.
+  issueCreditNote: permissionProcedure("invoices.void")
+    .input(creditNoteInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const invoice = found(
+        await getInvoice(getDb(), ctx.businessId, input.invoiceId),
+      );
+      let lines: { invoiceLineId: string; amountMinor: number }[] | undefined;
+      if (input.lines) {
+        lines = [];
+        for (const line of input.lines) {
+          const amountMinor = majorToMinor(line.amountMajor, invoice.currency);
+          if (amountMinor === null) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `"${line.amountMajor}" isn't an amount in ${invoice.currency}`,
+            });
+          }
+          lines.push({ invoiceLineId: line.invoiceLineId, amountMinor });
+        }
+      }
+      const result = await issueCreditNote(
+        getDb(),
+        ctx.businessId,
+        ctx.session.user.id,
+        { invoiceId: input.invoiceId, lines, reason: input.reason },
+      );
+      if (!result.ok) {
+        throw new TRPCError({
+          code:
+            result.reason === "not_found"
+              ? "NOT_FOUND"
+              : result.reason === "not_creditable"
+                ? "CONFLICT"
+                : "BAD_REQUEST",
+          message: result.message,
+        });
+      }
+      return result.creditNote;
+    }),
 
   createDraft: permissionProcedure("invoices.create")
     .input(draftInvoiceInputSchema)
@@ -345,8 +450,15 @@ export const invoicesRouter = createTRPCRouter({
         reason: z.string().trim().max(500).optional(),
       }),
     )
-    .mutation(async ({ ctx, input }) =>
-      found(
+    .mutation(async ({ ctx, input }) => {
+      // Name the reason when only the e-invoice / credit note rule stands
+      // in the way, instead of the SQL guard's bare NOT_FOUND.
+      const current = await getInvoice(getDb(), ctx.businessId, input.invoiceId);
+      const blocked = current ? voidBlockedReason(current) : null;
+      if (blocked && (current?.status === "sent" || current?.status === "overdue")) {
+        throw new TRPCError({ code: "CONFLICT", message: blocked });
+      }
+      return found(
         await voidInvoice(
           getDb(),
           ctx.businessId,
@@ -354,8 +466,8 @@ export const invoicesRouter = createTRPCRouter({
           input.invoiceId,
           input.reason,
         ),
-      ),
-    ),
+      );
+    }),
 
   // Copies any invoice into a fresh editable draft (no number/status carried
   // over, lines detached from the source's time entries).
@@ -382,6 +494,27 @@ export const invoicesRouter = createTRPCRouter({
         });
       }
       return { ok: true as const };
+    }),
+
+  // Prefix of new credit note numbers (#5042). Issued numbers keep theirs.
+  configureCreditNotePrefix: permissionProcedure("invoices.configure")
+    .input(
+      z.object({
+        prefix: z
+          .string()
+          .trim()
+          .regex(
+            CREDIT_NOTE_PREFIX_PATTERN,
+            "Use up to 10 letters, digits or - / _ .",
+          ),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await getDb()
+        .update(schema.business)
+        .set({ creditNotePrefix: input.prefix, updatedAt: new Date() })
+        .where(eq(schema.business.id, ctx.businessId));
+      return { prefix: input.prefix };
     }),
 
   configureNextNumber: permissionProcedure("invoices.configure")

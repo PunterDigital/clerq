@@ -405,7 +405,8 @@ export const API_OPERATIONS: ApiOperation[] = [
     description: "It keeps its number; its time goes back to unbilled.",
     body: voidInvoiceBodySchema,
     bodyOptional: true,
-    conflict: "Only sent or overdue invoices can be voided (delete a draft instead).",
+    conflict:
+      "Only sent or overdue invoices can be voided (delete a draft instead), and not once they went out as an e-invoice or have a credit note.",
   },
   {
     method: "post",

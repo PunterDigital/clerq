@@ -331,6 +331,14 @@ describe("/api/v1/invoices", () => {
       expect(xml).toContain("<cbc:BuyerReference>PO-9</cbc:BuyerReference>");
       expect(xml).toContain('<cbc:EndpointID schemeID="9930">DE123456789</cbc:EndpointID>');
 
+      // Downloaded = sent as an e-invoice: it can't be voided any more (#5042).
+      const { POST: voidIt } = await voidRoute();
+      const voided = await call(voidIt, "POST", `/api/v1/invoices/${invoiceId}/void`, writeA, {
+        params: { invoiceId },
+      });
+      expect(voided.status).toBe(409);
+      expect(voided.body.error.message).toMatch(/credit note instead/);
+
       // Another business's key gets nothing.
       expect((await get(writeB)).status).toBe(404);
     } finally {
