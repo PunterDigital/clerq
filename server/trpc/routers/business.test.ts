@@ -174,3 +174,103 @@ describe("business settings - structured postal address", () => {
     ).rejects.toThrow(/country/i);
   });
 });
+
+describe("business settings - e-invoicing opt-in (#5065)", () => {
+  const base = {
+    name: "Alpha",
+    currency: "EUR",
+    hoursPerDay: 8,
+    standardRatePct: null,
+    vatNumber: null,
+    address: null,
+  };
+  const berlin = { street: "Hauptstraße 5", city: "Berlin", postcode: "10115", country: "DE" };
+  const bristol = { street: "12 Harbour Street", city: "Bristol", postcode: "BS1 4QA", country: "GB" };
+
+  it("is off by default, for settings and for every member's current()", async () => {
+    const caller = callerFor("shay");
+    await caller.business.create({ name: "Alpha", currency: "EUR" });
+    expect((await caller.business.settings()).einvoicingEnabled).toBe(false);
+    expect((await caller.business.current()).einvoicingEnabled).toBe(false);
+  });
+
+  it("turns on with an EEA address and saves that address", async () => {
+    const caller = callerFor("shay");
+    await caller.business.create({ name: "Alpha", currency: "EUR" });
+    const result = await caller.business.updateEinvoicing({ enabled: true, postalAddress: berlin });
+    expect(result).toMatchObject({ einvoicingEnabled: true, postalAddress: { country: "DE" } });
+    const settings = await caller.business.settings();
+    expect(settings.einvoicingEnabled).toBe(true);
+    expect(settings.postalAddress).toMatchObject({ city: "Berlin", country: "DE" });
+    expect((await caller.business.current()).einvoicingEnabled).toBe(true);
+  });
+
+  it("refuses a business outside the EEA and saves nothing", async () => {
+    const caller = callerFor("shay");
+    await caller.business.create({ name: "Alpha", currency: "GBP" });
+    await expect(
+      caller.business.updateEinvoicing({ enabled: true, postalAddress: bristol }),
+    ).rejects.toThrow(/only for businesses established in the EEA/);
+    const settings = await caller.business.settings();
+    expect(settings.einvoicingEnabled).toBe(false);
+    expect(settings.postalAddress).toBeNull();
+  });
+
+  it("refuses to turn on with no address at all, and uses the saved one when left out", async () => {
+    const caller = callerFor("shay");
+    await caller.business.create({ name: "Alpha", currency: "EUR" });
+    await expect(caller.business.updateEinvoicing({ enabled: true })).rejects.toThrow(/EEA/);
+
+    await caller.business.updateSettings({ ...base, postalAddress: berlin });
+    const result = await caller.business.updateEinvoicing({ enabled: true });
+    expect(result.einvoicingEnabled).toBe(true);
+    expect(result.postalAddress?.city).toBe("Berlin");
+  });
+
+  it("turning it off keeps the address, and turning it back on brings it back", async () => {
+    const caller = callerFor("shay");
+    await caller.business.create({ name: "Alpha", currency: "EUR" });
+    await caller.business.updateEinvoicing({ enabled: true, postalAddress: berlin });
+    // An address sent while turning it off is ignored.
+    await caller.business.updateEinvoicing({ enabled: false, postalAddress: bristol });
+    let settings = await caller.business.settings();
+    expect(settings.einvoicingEnabled).toBe(false);
+    expect(settings.postalAddress?.country).toBe("DE");
+
+    await caller.business.updateEinvoicing({ enabled: true });
+    settings = await caller.business.settings();
+    expect(settings.einvoicingEnabled).toBe(true);
+    expect(settings.postalAddress?.country).toBe("DE");
+  });
+
+  it("keeps the address in the EEA through updateSettings while it is on", async () => {
+    const caller = callerFor("shay");
+    await caller.business.create({ name: "Alpha", currency: "EUR" });
+    await caller.business.updateEinvoicing({ enabled: true, postalAddress: berlin });
+
+    await expect(
+      caller.business.updateSettings({ ...base, postalAddress: bristol }),
+    ).rejects.toThrow(/EEA/);
+    await expect(
+      caller.business.updateSettings({ ...base, postalAddress: null }),
+    ).rejects.toThrow(/EEA/);
+    // Left out = kept: the Settings form's Business card saves this way.
+    await caller.business.updateSettings({ ...base, name: "Alpha GmbH" });
+    const settings = await caller.business.settings();
+    expect(settings.name).toBe("Alpha GmbH");
+    expect(settings.postalAddress?.country).toBe("DE");
+
+    await caller.business.updateSettings({
+      ...base,
+      postalAddress: { ...berlin, city: "Hamburg", postcode: "20095" },
+    });
+    expect((await caller.business.settings()).postalAddress?.city).toBe("Hamburg");
+  });
+
+  it("still lets a business that has it off save any structured address", async () => {
+    const caller = callerFor("shay");
+    await caller.business.create({ name: "Alpha", currency: "GBP" });
+    await caller.business.updateSettings({ ...base, postalAddress: bristol });
+    expect((await caller.business.settings()).postalAddress?.country).toBe("GB");
+  });
+});

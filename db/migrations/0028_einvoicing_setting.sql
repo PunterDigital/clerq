@@ -1,0 +1,1 @@
+ALTER TABLE "business" ADD COLUMN "einvoicing_enabled" boolean DEFAULT false NOT NULL;

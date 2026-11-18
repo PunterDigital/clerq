@@ -197,6 +197,13 @@
       "when": 1794991808825,
       "tag": "0027_structured_postal_address",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794996356947,
+      "tag": "0028_einvoicing_setting",
+      "breakpoints": true
     }
   ]
 }

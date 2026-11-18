@@ -44,10 +44,14 @@ export function ClientForm({
   clientId,
   initial,
   countryOptions,
+  einvoicingEnabled = false,
 }: {
   clientId?: string;
   initial?: ClientFormValues;
   countryOptions: CountryOption[];
+  // Settings -> E-invoicing (#5065). While off, the structured address box
+  // is hidden and left out of the save (= kept as it is).
+  einvoicingEnabled?: boolean;
 }) {
   const router = useRouter();
   const trpc = useTRPC();
@@ -112,7 +116,9 @@ export function ClientForm({
     event.preventDefault();
     setRateError(null);
     setPostalError(null);
-    const postalAddress = postalAddressFromDraft(postal);
+    const postalAddress = einvoicingEnabled
+      ? postalAddressFromDraft(postal)
+      : { value: undefined };
     if ("error" in postalAddress) {
       setPostalError(postalAddress.error);
       return;
@@ -224,13 +230,15 @@ export function ClientForm({
             </p>
           </div>
 
-          <PostalAddressFields
-            value={postal}
-            onChange={setPostal}
-            freeText={address}
-            countryOptions={countryOptions}
-            error={postalError}
-          />
+          {einvoicingEnabled ? (
+            <PostalAddressFields
+              value={postal}
+              onChange={setPostal}
+              freeText={address}
+              countryOptions={countryOptions}
+              error={postalError}
+            />
+          ) : null}
 
           <div className="flex flex-col gap-2">
             <Label>Contacts</Label>
