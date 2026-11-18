@@ -90,7 +90,7 @@ another business or isn't a UUID is a 404.
 | Method and path | What it does |
 | --- | --- |
 | `GET /clients` | List clients, newest first. `?search=` (name contains), `?includeArchived=true` |
-| `POST /clients` | Create a client: `name` (required), `contacts`, `notes`, `address` (free text, printed on invoices), `postalAddress` (the same address in parts for e-invoices: `{ "street", "city", "postcode", "region", "country" }`, `country` an ISO 3166-1 code like `GB` and required, the rest optional; `null` clears it), `buyerReference` (default PO number / buyer reference copied onto each new invoice; `null` clears it), `companyNumber`, `vatNumber`, `defaultRateMinor`, `defaultRateCurrency`, `defaultRateUnit` (`hour` or `day`), `budgetMinor`, `budgetCurrency` |
+| `POST /clients` | Create a client: `name` (required), `contacts`, `notes`, `address` (free text, printed on invoices), `postalAddress` (the same address in parts for e-invoices: `{ "street", "city", "postcode", "region", "country" }`, `country` an ISO 3166-1 code like `GB` and required, the rest optional; `null` clears it), `buyerReference` (default PO number / buyer reference copied onto each new invoice; `null` clears it), `peppolId` (the client's Peppol ID as `scheme:value`, e.g. `0184:12345678`, scheme from the Peppol EAS list; e-invoices are addressed to it instead of the address worked out from the VAT number; `null` clears it), `companyNumber`, `vatNumber`, `defaultRateMinor`, `defaultRateCurrency`, `defaultRateUnit` (`hour` or `day`), `budgetMinor`, `budgetCurrency` |
 | `GET /clients/{id}` | One client |
 | `PATCH /clients/{id}` | Change a client's fields |
 | `POST /clients/{id}/archive` | Archive a client |

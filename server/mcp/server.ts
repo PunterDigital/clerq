@@ -69,6 +69,13 @@ const clientFields = {
     .describe(
       "Default buyer reference / PO number, copied onto each new invoice for this client (e-invoicing BT-10; XRechnung Leitweg-ID). Left out on update = kept; null or empty clears it.",
     ),
+  peppolId: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      "The client's Peppol ID as scheme:value, e.g. 0184:12345678 (scheme from the Peppol EAS list). E-invoices are addressed to it; without one the address is worked out from the VAT number. Left out on update = kept; null or empty clears it.",
+    ),
   companyNumber: z
     .string()
     .nullable()

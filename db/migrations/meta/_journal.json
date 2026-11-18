@@ -225,6 +225,13 @@
       "when": 1795018036520,
       "tag": "0031_credit_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1795043195407,
+      "tag": "0032_peppol_ids",
+      "breakpoints": true
     }
   ]
 }

@@ -29,6 +29,9 @@ async function loadParties(db: Db, businessId: string, clientId: string) {
       iban: schema.business.iban,
       bic: schema.business.bic,
       einvoiceContact: schema.business.einvoiceContact,
+      peppolId: schema.business.peppolId,
+      companyNumber: schema.business.companyNumber,
+      companyNumberScheme: schema.business.companyNumberScheme,
     })
     .from(schema.business)
     .where(eq(schema.business.id, businessId));
@@ -38,6 +41,7 @@ async function loadParties(db: Db, businessId: string, clientId: string) {
       postalAddress: schema.client.postalAddress,
       vatNumber: schema.client.vatNumber,
       companyNumber: schema.client.companyNumber,
+      peppolId: schema.client.peppolId,
     })
     .from(schema.client)
     .where(
@@ -60,12 +64,16 @@ async function loadParties(db: Db, businessId: string, clientId: string) {
       iban: business.iban,
       bic: business.bic,
       contact: business.einvoiceContact ?? null,
+      peppolId: business.peppolId,
+      companyNumber: business.companyNumber,
+      companyNumberScheme: business.companyNumberScheme,
     },
     client: {
       name: client.name,
       postalAddress: client.postalAddress ?? null,
       vatNumber: client.vatNumber,
       companyNumber: client.companyNumber,
+      peppolId: client.peppolId,
     },
   };
 }

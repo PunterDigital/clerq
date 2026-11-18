@@ -66,6 +66,15 @@ export const business = pgTable("business", {
   // Seller contact for e-invoices (EN 16931 BG-6: name, phone, email);
   // required between two German parties (Peppol DE-R-002). Optional.
   einvoiceContact: jsonb("einvoice_contact").$type<EinvoiceContact>(),
+  // Optional Peppol ID (#5075) as "scheme:value" (e.g. "0184:12345678"),
+  // used as the seller's electronic address (EN 16931 BT-34) ahead of the
+  // one worked out from the VAT number. lib/einvoice-codes.ts validates it.
+  peppolId: text("peppol_id"),
+  // Company registration number (EN 16931 BT-30) and the register it is
+  // from (an ISO 6523 ICD code, e.g. 0106 KVK). Dutch, Danish and Icelandic
+  // sellers need both in e-invoices.
+  companyNumber: text("company_number"),
+  companyNumberScheme: text("company_number_scheme"),
   // Prefix of credit note numbers (#5042): "CN-" gives CN-2026-0001. Credit
   // notes have their own gapless sequence (credit_note_sequence).
   creditNotePrefix: text("credit_note_prefix").notNull().default("CN-"),
@@ -234,6 +243,9 @@ export const client = pgTable(
     // Default buyer reference / PO number (EN 16931 BT-10, Peppol R003,
     // XRechnung Leitweg-ID), copied onto each new invoice for the client.
     buyerReference: text("buyer_reference"),
+    // Optional Peppol ID (#5075) as "scheme:value": the buyer's electronic
+    // address (EN 16931 BT-49), used ahead of the VAT-derived one.
+    peppolId: text("peppol_id"),
     // Company / registration number (e.g. Companies House number, IČO).
     // Printed under the client on invoices when set.
     companyNumber: text("company_number"),

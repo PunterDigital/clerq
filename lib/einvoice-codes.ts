@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { EAS_SCHEMES } from "./peppol-eas";
+
 // Code lists and identifiers that e-invoices (EN 16931 / Peppol BIS 3.0)
 // need and Clerq's own invoices print when set (#5039). Shared by the
 // forms, the routers, the REST API and MCP.
@@ -155,3 +157,94 @@ export function normalizeBuyerReference(
   const trimmed = value?.trim() ?? "";
   return trimmed === "" ? null : trimmed;
 }
+
+// A Peppol ID (electronic address, EN 16931 BT-34 seller / BT-49 buyer) in
+// the usual "scheme:value" form, e.g. "0184:12345678" (#5075). Optional on
+// the business and on each client; when set, the e-invoice export uses it
+// ahead of the address it would work out from the VAT number.
+export type PeppolId = { scheme: string; id: string };
+
+const EAS_CODES: ReadonlySet<string> = new Set(EAS_SCHEMES.map((s) => s.code));
+
+export function isEasScheme(code: string): boolean {
+  return EAS_CODES.has(code);
+}
+
+// Schemes that can identify a legal entity (BT-30): the ISO 6523 ICD codes
+// in the EAS list, without the 99xx VAT-number schemes.
+export const COMPANY_NUMBER_SCHEMES = EAS_SCHEMES.filter(
+  (s) => !s.code.startsWith("99"),
+);
+
+export function isCompanyNumberScheme(code: string): boolean {
+  return EAS_CODES.has(code) && !code.startsWith("99");
+}
+
+// "0184:12345678" -> its parts, or null when it isn't a Peppol ID with a
+// known scheme. The value keeps its case; spaces around it are dropped.
+export function parsePeppolId(value: string | null | undefined): PeppolId | null {
+  const match = /^\s*(\d{4})\s*:\s*(\S(?:.*\S)?)\s*$/.exec(value ?? "");
+  if (!match || !isEasScheme(match[1]) || match[2].length > 50) {
+    return null;
+  }
+  // The value is an identifier, never free text.
+  if (!/^[A-Za-z0-9:._~+\-]+$/.test(match[2])) {
+    return null;
+  }
+  return { scheme: match[1], id: match[2] };
+}
+
+export function formatPeppolId(id: PeppolId): string {
+  return `${id.scheme}:${id.id}`;
+}
+
+// For service-layer callers that skip the schema: the compact form, or
+// null for anything that isn't a Peppol ID.
+export function normalizePeppolId(value: string | null | undefined): string | null {
+  const parsed = parsePeppolId(value);
+  return parsed ? formatPeppolId(parsed) : null;
+}
+
+// "" / null clear it; anything else must parse.
+export const peppolIdSchema = z
+  .string()
+  .trim()
+  .max(60)
+  .transform((v) => (v === "" ? null : v))
+  .nullable()
+  .refine((v) => v === null || parsePeppolId(v) !== null, {
+    message:
+      "A Peppol ID is a 4-digit scheme from the Peppol list, a colon and the number, like 0184:12345678",
+  })
+  .transform((v) => {
+    const parsed = parsePeppolId(v);
+    return parsed ? formatPeppolId(parsed) : null;
+  });
+
+// The business's company registration number (BT-30) and, optionally, the
+// register it comes from.
+export const companyNumberSchema = z
+  .string()
+  .trim()
+  .max(50, "Keep the company number under 50 characters")
+  .transform((v) => (v === "" ? null : v))
+  .nullable();
+
+export const companyNumberSchemeSchema = z
+  .string()
+  .trim()
+  .transform((v) => (v === "" ? null : v))
+  .nullable()
+  .refine((v) => v === null || isCompanyNumberScheme(v), {
+    message: "Pick the company register from the list",
+  });
+
+// The register a country's company numbers usually come from, where the
+// Peppol rules name one: offered as the default in the forms.
+export const COMPANY_NUMBER_SCHEME_BY_COUNTRY: Readonly<Record<string, string>> = {
+  DK: "0184",
+  IS: "0196",
+  NL: "0106",
+  NO: "0192",
+  SE: "0007",
+};

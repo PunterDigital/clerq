@@ -11,7 +11,19 @@ import {
   postalAddressFromDraft,
 } from "@/components/postal-address-fields";
 import type { CurrencyOption } from "@/lib/currencies";
-import { formatIban, isValidBic, isValidIban } from "@/lib/einvoice-codes";
+import {
+  PeppolIdFields,
+  peppolIdDraft,
+  peppolIdFromDraft,
+  schemeLabel,
+} from "@/components/peppol-id-fields";
+import {
+  COMPANY_NUMBER_SCHEMES,
+  COMPANY_NUMBER_SCHEME_BY_COUNTRY,
+  formatIban,
+  isValidBic,
+  isValidIban,
+} from "@/lib/einvoice-codes";
 import type { CountryOption, PostalAddress } from "@/lib/postal-address";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,6 +55,9 @@ export function SettingsForm({
       phone: string | null;
       email: string | null;
     } | null;
+    peppolId: string | null;
+    companyNumber: string | null;
+    companyNumberScheme: string | null;
     creditNotePrefix: string;
     currency: string;
     hoursPerDay: number;
@@ -73,6 +88,14 @@ export function SettingsForm({
   );
   const [contactEmail, setContactEmail] = useState(
     initial.einvoiceContact?.email ?? "",
+  );
+  const [peppol, setPeppol] = useState(() => peppolIdDraft(initial.peppolId));
+  const [peppolError, setPeppolError] = useState<string | null>(null);
+  const [companyNumber, setCompanyNumber] = useState(
+    initial.companyNumber ?? "",
+  );
+  const [companyScheme, setCompanyScheme] = useState(
+    initial.companyNumberScheme ?? "",
   );
   const [currency, setCurrency] = useState(initial.currency);
   const [hoursPerDay, setHoursPerDay] = useState(String(initial.hoursPerDay));
@@ -247,6 +270,7 @@ export function SettingsForm({
               event.preventDefault();
               setPostalError(null);
               setBankError(null);
+              setPeppolError(null);
               if (!einvoicing) {
                 updateEinvoicing.mutate({ enabled: false });
                 return;
@@ -272,9 +296,19 @@ export function SettingsForm({
                 );
                 return;
               }
+              const peppolId = peppolIdFromDraft(peppol);
+              if ("error" in peppolId) {
+                setPeppolError(peppolId.error);
+                return;
+              }
               updateEinvoicing.mutate({
                 enabled: true,
                 postalAddress: postalAddress.value,
+                peppolId: peppolId.value,
+                companyNumber: companyNumber.trim() || null,
+                companyNumberScheme: companyNumber.trim()
+                  ? companyScheme || null
+                  : null,
                 iban: iban.trim() || null,
                 bic: bic.trim() || null,
                 contact: {
@@ -380,6 +414,64 @@ export function SettingsForm({
                   </div>
                 </div>
               </div>
+            ) : null}
+            {einvoicing ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-sm font-medium">
+                  Company registration number (optional)
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Sent as your legal entity number in e-invoices. Dutch,
+                  Danish and Icelandic businesses need it, with the register
+                  it comes from (KVK, CVR, kennitala).
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex flex-col gap-2 sm:w-56">
+                    <Label htmlFor="company-number">Company number</Label>
+                    <Input
+                      id="company-number"
+                      value={companyNumber}
+                      onChange={(e) => {
+                        setCompanyNumber(e.target.value);
+                        // Suggest the country's register on the first entry.
+                        if (!companyScheme && !companyNumber) {
+                          setCompanyScheme(
+                            COMPANY_NUMBER_SCHEME_BY_COUNTRY[postal.country] ??
+                              "",
+                          );
+                        }
+                      }}
+                      maxLength={50}
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="flex min-w-0 flex-1 flex-col gap-2">
+                    <Label htmlFor="company-register">Company register</Label>
+                    <select
+                      id="company-register"
+                      value={companyScheme}
+                      onChange={(e) => setCompanyScheme(e.target.value)}
+                      className="h-9 w-full rounded-md border bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40"
+                    >
+                      <option value="">Not in the list</option>
+                      {COMPANY_NUMBER_SCHEMES.map((s) => (
+                        <option key={s.code} value={s.code}>
+                          {schemeLabel(s)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            {einvoicing ? (
+              <PeppolIdFields
+                idPrefix="business"
+                value={peppol}
+                onChange={setPeppol}
+                error={peppolError}
+                hint="Where e-invoices say they come from. Leave it empty and Clerq uses your VAT number (or, in Denmark, Iceland, Norway and Sweden, your company number). Fill it in if you are registered on Peppol under another number."
+              />
             ) : null}
             {updateEinvoicing.error ? (
               <p role="alert" className="text-sm text-destructive">

@@ -9,6 +9,8 @@ import {
 } from "@/lib/postal-address";
 import {
   buyerReferenceSchema,
+  normalizePeppolId,
+  peppolIdSchema,
   normalizeBuyerReference,
 } from "@/lib/einvoice-codes";
 import { likeContains } from "@/lib/search";
@@ -49,6 +51,10 @@ export const clientInputSchema = z.object({
   // Default buyer reference / PO number, copied onto each new invoice.
   // Left out on update = keep; null or "" clears it.
   buyerReference: buyerReferenceSchema.optional(),
+  // Peppol ID as "scheme:value" (e.g. "0184:12345678"): where e-invoices
+  // for this client are addressed, ahead of the VAT-derived default. Left
+  // out on update = keep; null or "" clears it.
+  peppolId: peppolIdSchema.optional(),
   // Company / registration number (Companies House, IČO, etc.).
   companyNumber: z.string().trim().max(50).nullable().optional(),
   // Stored verbatim; validated only for shape. Required at issue time for
@@ -141,6 +147,7 @@ export async function createClient(
         address: input.address || null,
         postalAddress: normalizePostalAddress(input.postalAddress) ?? null,
         buyerReference: normalizeBuyerReference(input.buyerReference),
+        peppolId: normalizePeppolId(input.peppolId),
         companyNumber: input.companyNumber || null,
         vatNumber: input.vatNumber || null,
         defaultRateMinor: input.defaultRateMinor ?? null,
@@ -182,6 +189,9 @@ export async function updateClient(
           : {}),
         ...(input.buyerReference !== undefined
           ? { buyerReference: normalizeBuyerReference(input.buyerReference) }
+          : {}),
+        ...(input.peppolId !== undefined
+          ? { peppolId: normalizePeppolId(input.peppolId) }
           : {}),
         companyNumber: input.companyNumber || null,
         vatNumber: input.vatNumber || null,

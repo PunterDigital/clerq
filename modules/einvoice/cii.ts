@@ -45,7 +45,7 @@ function party(tag: "ram:SellerTradeParty" | "ram:BuyerTradeParty", p: EinvoiceP
     `<${tag}>` +
     el("ram:Name", p.name) +
     (p.companyId
-      ? `<ram:SpecifiedLegalOrganization>${el("ram:ID", p.companyId)}</ram:SpecifiedLegalOrganization>`
+      ? `<ram:SpecifiedLegalOrganization>${el("ram:ID", p.companyId, p.companyIdScheme ? ` schemeID="${esc(p.companyIdScheme)}"` : "")}</ram:SpecifiedLegalOrganization>`
       : "") +
     (p.contact
       ? "<ram:DefinedTradeContact>" +
