@@ -3,11 +3,16 @@ import { describe, expect, it } from "vitest";
 import {
   bicSchema,
   buyerReferenceSchema,
+  COMPANY_NUMBER_SCHEMES,
+  companyNumberSchemeSchema,
   formatIban,
   ibanSchema,
   isValidBic,
+  isEasScheme,
   isValidIban,
   normalizeBuyerReference,
+  parsePeppolId,
+  peppolIdSchema,
   suggestedVatexCode,
   unitCodeSchema,
   vatexCodeSchema,
@@ -83,5 +88,33 @@ describe("buyer reference", () => {
     expect(normalizeBuyerReference("  ")).toBeNull();
     expect(normalizeBuyerReference(" A ")).toBe("A");
     expect(normalizeBuyerReference(undefined)).toBeNull();
+  });
+});
+
+describe("Peppol IDs and company registers (#5075)", () => {
+  it("parses scheme:value with a scheme from the EAS list", () => {
+    expect(parsePeppolId("0184:12345678")).toEqual({ scheme: "0184", id: "12345678" });
+    expect(parsePeppolId(" 9930 : DE123456789 ")).toEqual({ scheme: "9930", id: "DE123456789" });
+    expect(parsePeppolId("1234:1")).toBeNull();
+    expect(parsePeppolId("0184:")).toBeNull();
+    expect(parsePeppolId("0184:12 34")).toBeNull();
+    expect(parsePeppolId("12345678")).toBeNull();
+    expect(parsePeppolId(null)).toBeNull();
+  });
+
+  it("stores the compact form, clears on empty and refuses the rest", () => {
+    expect(peppolIdSchema.parse(" 0184 : 12345678 ")).toBe("0184:12345678");
+    expect(peppolIdSchema.parse("")).toBeNull();
+    expect(peppolIdSchema.parse(null)).toBeNull();
+    expect(peppolIdSchema.safeParse("0184").success).toBe(false);
+    expect(peppolIdSchema.safeParse("9999:1").success).toBe(false);
+  });
+
+  it("takes company registers from the ICD codes only", () => {
+    expect(companyNumberSchemeSchema.parse("0106")).toBe("0106");
+    expect(companyNumberSchemeSchema.parse("")).toBeNull();
+    expect(companyNumberSchemeSchema.safeParse("9930").success).toBe(false);
+    expect(COMPANY_NUMBER_SCHEMES.some((s) => s.code.startsWith("99"))).toBe(false);
+    expect(isEasScheme("9944")).toBe(true);
   });
 });

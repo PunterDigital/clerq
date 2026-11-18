@@ -10,8 +10,11 @@ import {
 import { EINVOICING_EEA_ONLY_MESSAGE, isEeaCountry } from "@/lib/eea";
 import {
   bicSchema,
+  companyNumberSchema,
+  companyNumberSchemeSchema,
   einvoiceContactSchema,
   ibanSchema,
+  peppolIdSchema,
 } from "@/lib/einvoice-codes";
 import { getUserBusinesses, setActiveBusiness } from "@/server/membership";
 import {
@@ -133,6 +136,9 @@ export const businessRouter = createTRPCRouter({
         iban: schema.business.iban,
         bic: schema.business.bic,
         einvoiceContact: schema.business.einvoiceContact,
+        peppolId: schema.business.peppolId,
+        companyNumber: schema.business.companyNumber,
+        companyNumberScheme: schema.business.companyNumberScheme,
         creditNotePrefix: schema.business.creditNotePrefix,
         currency: schema.business.currency,
         hoursPerDay: schema.business.hoursPerDay,
@@ -154,6 +160,9 @@ export const businessRouter = createTRPCRouter({
       iban: row.iban,
       bic: row.bic,
       einvoiceContact: row.einvoiceContact ?? null,
+      peppolId: row.peppolId,
+      companyNumber: row.companyNumber,
+      companyNumberScheme: row.companyNumberScheme,
       creditNotePrefix: row.creditNotePrefix,
       currency: row.currency,
       hoursPerDay: row.hoursPerDay,
@@ -245,6 +254,12 @@ export const businessRouter = createTRPCRouter({
         bic: bicSchema.optional(),
         // Seller contact for e-invoices (#5040). Same keep/clear rules.
         contact: einvoiceContactSchema.optional(),
+        // Peppol ID ("scheme:value") and company registration number with
+        // its register (#5075). Same keep/clear rules. A register without a
+        // number is dropped.
+        peppolId: peppolIdSchema.optional(),
+        companyNumber: companyNumberSchema.optional(),
+        companyNumberScheme: companyNumberSchemeSchema.optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -286,6 +301,20 @@ export const businessRouter = createTRPCRouter({
           ...(input.contact !== undefined
             ? { einvoiceContact: input.contact }
             : {}),
+          ...(input.peppolId !== undefined ? { peppolId: input.peppolId } : {}),
+          ...(input.companyNumber !== undefined
+            ? {
+                companyNumber: input.companyNumber,
+                // Clearing the number clears its register too.
+                ...(input.companyNumber === null
+                  ? { companyNumberScheme: null }
+                  : {}),
+              }
+            : {}),
+          ...(input.companyNumberScheme !== undefined &&
+          input.companyNumber !== null
+            ? { companyNumberScheme: input.companyNumberScheme }
+            : {}),
           updatedAt: new Date(),
         })
         .where(eq(schema.business.id, ctx.businessId))
@@ -295,6 +324,9 @@ export const businessRouter = createTRPCRouter({
           iban: schema.business.iban,
           bic: schema.business.bic,
           einvoiceContact: schema.business.einvoiceContact,
+          peppolId: schema.business.peppolId,
+          companyNumber: schema.business.companyNumber,
+          companyNumberScheme: schema.business.companyNumberScheme,
         });
       return updated;
     }),

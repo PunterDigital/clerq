@@ -258,6 +258,55 @@ describe("business settings - e-invoicing opt-in (#5065)", () => {
     expect(settings).toMatchObject({ iban: null, bic: null });
   });
 
+  it("saves the Peppol ID and company number, keeps them when left out and clears them (#5075)", async () => {
+    const caller = callerFor("shay");
+    await caller.business.create({ name: "Alpha", currency: "EUR" });
+    await expect(
+      caller.business.updateEinvoicing({ enabled: true, postalAddress: berlin, peppolId: "12345678" }),
+    ).rejects.toThrow(/Peppol ID/);
+    await expect(
+      caller.business.updateEinvoicing({
+        enabled: true,
+        postalAddress: berlin,
+        companyNumber: "HRB 1",
+        companyNumberScheme: "9930",
+      }),
+    ).rejects.toThrow(/register/);
+
+    const saved = await caller.business.updateEinvoicing({
+      enabled: true,
+      postalAddress: berlin,
+      peppolId: " 0204 : 991-1234512345-06 ",
+      companyNumber: " 87654321 ",
+      companyNumberScheme: "0106",
+    });
+    expect(saved).toMatchObject({
+      peppolId: "0204:991-1234512345-06",
+      companyNumber: "87654321",
+      companyNumberScheme: "0106",
+    });
+
+    await caller.business.updateEinvoicing({ enabled: true });
+    expect(await caller.business.settings()).toMatchObject({
+      peppolId: "0204:991-1234512345-06",
+      companyNumber: "87654321",
+      companyNumberScheme: "0106",
+    });
+
+    // Clearing the number clears its register; "" clears the Peppol ID.
+    await caller.business.updateEinvoicing({
+      enabled: true,
+      peppolId: "",
+      companyNumber: null,
+      companyNumberScheme: "0106",
+    });
+    expect(await caller.business.settings()).toMatchObject({
+      peppolId: null,
+      companyNumber: null,
+      companyNumberScheme: null,
+    });
+  });
+
   it("saves the e-invoice contact, checks phone and email, and clears it when empty (#5040)", async () => {
     const caller = callerFor("shay");
     await caller.business.create({ name: "Alpha", currency: "EUR" });

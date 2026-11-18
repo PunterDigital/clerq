@@ -6,6 +6,11 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import {
+  PeppolIdFields,
+  peppolIdDraft,
+  peppolIdFromDraft,
+} from "@/components/peppol-id-fields";
+import {
   PostalAddressFields,
   postalAddressDraft,
   postalAddressFromDraft,
@@ -34,6 +39,7 @@ export type ClientFormValues = {
   companyNumber?: string | null;
   vatNumber?: string | null;
   buyerReference?: string | null;
+  peppolId?: string | null;
   defaultRateMinor?: number | null;
   defaultRateCurrency?: string | null;
   defaultRateUnit?: RateUnit;
@@ -86,6 +92,8 @@ export function ClientForm({
   const [companyNumber, setCompanyNumber] = useState(
     initial?.companyNumber ?? "",
   );
+  const [peppol, setPeppol] = useState(() => peppolIdDraft(initial?.peppolId));
+  const [peppolError, setPeppolError] = useState<string | null>(null);
   const [address, setAddress] = useState(initial?.address ?? "");
   const [postal, setPostal] = useState(() =>
     postalAddressDraft(initial?.postalAddress as PostalAddress | null),
@@ -157,6 +165,12 @@ export function ClientForm({
       }
       budgetCurrencyCode = code;
     }
+    setPeppolError(null);
+    const peppolId = peppolIdFromDraft(peppol);
+    if (einvoicingEnabled && "error" in peppolId) {
+      setPeppolError(peppolId.error);
+      return;
+    }
     const data: ClientFormValues = {
       name,
       notes: notes || undefined,
@@ -168,6 +182,8 @@ export function ClientForm({
       buyerReference: einvoicingEnabled
         ? buyerReference.trim() || null
         : undefined,
+      peppolId:
+        einvoicingEnabled && "value" in peppolId ? peppolId.value : undefined,
       defaultRateMinor,
       defaultRateCurrency,
       defaultRateUnit: rateUnit,
@@ -265,6 +281,16 @@ export function ClientForm({
                 Leitweg-ID).
               </p>
             </div>
+          ) : null}
+
+          {einvoicingEnabled ? (
+            <PeppolIdFields
+              idPrefix="client"
+              value={peppol}
+              onChange={setPeppol}
+              error={peppolError}
+              hint="Where e-invoices for this client are addressed. Leave it empty and Clerq uses the client's VAT number (or, in Denmark, Iceland, Norway and Sweden, the company number)."
+            />
           ) : null}
 
           <div className="flex flex-col gap-2">

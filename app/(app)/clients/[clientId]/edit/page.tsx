@@ -32,6 +32,7 @@ export default async function EditClientPage({
       companyNumber: client.companyNumber,
       vatNumber: client.vatNumber,
       buyerReference: client.buyerReference,
+      peppolId: client.peppolId,
       defaultRateMinor: client.defaultRateMinor,
       defaultRateCurrency: client.defaultRateCurrency,
       defaultRateUnit: client.defaultRateUnit,

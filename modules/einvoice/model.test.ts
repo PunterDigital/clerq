@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import { EINVOICE_FIXTURES } from "./fixtures";
 import { buildEinvoiceModel, type EinvoiceSource } from "./model";
-import { endpointFromVat, normalizeVatId } from "./peppol-ids";
+import { buildCiiInvoice } from "./cii";
+import {
+  clientCompanyId,
+  companyIdOf,
+  endpointFromVat,
+  isValidNorwegianOrgNumber,
+  isValidSwedishOrgNumber,
+  normalizeVatId,
+} from "./peppol-ids";
 import { buildUblInvoice, PEPPOL_BIS3_CUSTOMIZATION_ID } from "./ubl";
 
 function fixture(name: string): EinvoiceSource {
@@ -103,7 +111,7 @@ describe("e-invoice model (#5040)", () => {
     expect(missing(bare)).toEqual([
       "Lumen Labs B.V.'s address in parts, with a country (the client's page)",
       "Lumen Labs B.V.'s VAT number (needed for reverse charge)",
-      "Lumen Labs B.V.'s VAT number (Peppol addresses the buyer by it)",
+      "Lumen Labs B.V.'s Peppol ID or VAT number (the client's page): the e-invoice is addressed to it",
       "A buyer reference / PO number on the invoice (Peppol requires one)",
     ]);
   });
@@ -126,8 +134,9 @@ describe("e-invoice model (#5040)", () => {
     const danish = fixture("intra-community");
     danish.client.postalAddress = { ...danish.client.postalAddress!, country: "DK" };
     danish.client.vatNumber = "DK12345678";
+    danish.client.companyNumber = null;
     expect(missing(danish)).toEqual([
-      "A Peppol ID for Lumen Labs B.V.: Clerq can't work one out from a VAT number in DK yet",
+      "Lumen Labs B.V.'s Peppol ID or VAT number (the client's page): the e-invoice is addressed to it",
     ]);
 
     const dutchSeller = fixture("zero-rated");
@@ -140,8 +149,152 @@ describe("e-invoice model (#5040)", () => {
     };
     dutchSeller.business.vatNumber = "NL123456789B01";
     expect(missing(dutchSeller)).toEqual([
-      "A KVK number for your business: Dutch e-invoices need one, and Clerq can't add it to the export yet",
+      "Your KVK number (Settings -> E-invoicing: company number, with the register set to 0106 KVK or 0190 OIN)",
+      "Your IBAN (Settings -> E-invoicing): Dutch invoices need payment instructions",
     ]);
+  });
+});
+
+describe("explicit Peppol IDs and company numbers (#5075)", () => {
+  it("uses a typed-in Peppol ID ahead of the VAT-derived one", () => {
+    const source = fixture("standard-rate");
+    expect(model(source).buyer.endpoint).toEqual({ scheme: "9930", id: "DE987654321" });
+    source.client.peppolId = "0204:991-33333TEST-33";
+    source.business.peppolId = "0088:4012345000009";
+    const m = model(source);
+    expect(m.buyer.endpoint).toEqual({ scheme: "0204", id: "991-33333TEST-33" });
+    expect(m.seller.endpoint).toEqual({ scheme: "0088", id: "4012345000009" });
+    expect(buildUblInvoice(m)).toContain(
+      '<cbc:EndpointID schemeID="0204">991-33333TEST-33</cbc:EndpointID>',
+    );
+  });
+
+  it("addresses a Danish buyer by the typed-in CVR-based ID", () => {
+    const m = model(fixture("danish-buyer"));
+    expect(m.buyer.endpoint).toEqual({ scheme: "0184", id: "29403473" });
+    expect(m.buyer.companyId).toBeNull();
+  });
+
+  it("works out the Peppol ID from the company number in DK, IS, NO and SE", () => {
+    const m = model(fixture("danish-seller"));
+    // Seller: CVR typed with spaces, register 0184.
+    expect(m.seller.companyId).toBe("13585628");
+    expect(m.seller.companyIdScheme).toBe("0184");
+    expect(m.seller.endpoint).toEqual({ scheme: "0184", id: "13585628" });
+    // Buyer: organisationsnummer typed with a dash, register worked out.
+    expect(m.buyer.companyId).toBe("5560360793");
+    expect(m.buyer.companyIdScheme).toBe("0007");
+    expect(m.buyer.endpoint).toEqual({ scheme: "0007", id: "5560360793" });
+    const xml = buildUblInvoice(m);
+    expect(xml).toContain('<cbc:CompanyID schemeID="0184">13585628</cbc:CompanyID>');
+    expect(buildCiiInvoice(m)).toContain(
+      '<ram:SpecifiedLegalOrganization><ram:ID schemeID="0184">13585628</ram:ID>',
+    );
+  });
+
+  it("exports a Dutch seller's KVK number, and a Dutch buyer's too", () => {
+    const m = model(fixture("dutch-seller"));
+    expect(m.seller.companyIdScheme).toBe("0106");
+    expect(m.seller.endpoint).toEqual({ scheme: "0106", id: "87654321" });
+    expect(m.buyer.companyId).toBe("12345678");
+    expect(m.buyer.companyIdScheme).toBe("0106");
+
+    const noKvk = fixture("dutch-seller");
+    noKvk.business.companyNumberScheme = null;
+    expect(missing(noKvk)).toContain(
+      "Your KVK number (Settings -> E-invoicing: company number, with the register set to 0106 KVK or 0190 OIN)",
+    );
+    const oddBuyer = fixture("dutch-seller");
+    oddBuyer.client.companyNumber = "HRB 1";
+    expect(missing(oddBuyer)).toEqual([
+      "Lumen Labs B.V.'s company number as a KVK number (8 digits) or an OIN (20 digits), or leave it empty",
+    ]);
+  });
+
+  it("keeps a client's company number as typed where no register fits", () => {
+    const m = model(fixture("standard-rate"));
+    expect(m.buyer.companyId).toBe("HRB 12345");
+    expect(m.buyer.companyIdScheme).toBeNull();
+    expect(buildUblInvoice(m)).toContain("<cbc:CompanyID>HRB 12345</cbc:CompanyID>");
+  });
+
+  it("asks Danish and Icelandic sellers for their register number", () => {
+    const danish = fixture("danish-seller");
+    danish.business.companyNumber = null;
+    expect(missing(danish)).toEqual([
+      "Your Peppol ID (Settings -> E-invoicing): Clerq can't work one out from your VAT number",
+      "Your CVR number (Settings -> E-invoicing: company number, with the register set to 0184 CVR)",
+    ]);
+    // A typed-in Peppol ID settles the address, not the legal entity ID.
+    danish.business.peppolId = "0184:13585628";
+    expect(missing(danish)).toEqual([
+      "Your CVR number (Settings -> E-invoicing: company number, with the register set to 0184 CVR)",
+    ]);
+
+    const icelandic = fixture("danish-seller");
+    icelandic.business.postalAddress = {
+      street: "Laugavegur 1",
+      city: "Reykjavik",
+      postcode: "101",
+      region: null,
+      country: "IS",
+    };
+    icelandic.business.vatNumber = "IS12345";
+    expect(missing(icelandic)).toContain(
+      "Your kennitala (Settings -> E-invoicing: company number, with the register set to 0196)",
+    );
+  });
+
+  it("refuses numbers their register's check would fail", () => {
+    const swedish = fixture("danish-seller");
+    swedish.client.peppolId = "0007:5560360794";
+    expect(missing(swedish)).toEqual([
+      "Norrsken Studio AB's Peppol ID (the client's page): 5560360794 isn't a valid Swedish organisationsnummer (10 digits)",
+    ]);
+    const norwegian = fixture("danish-buyer");
+    norwegian.client.peppolId = "0192:923609017";
+    expect(missing(norwegian)[0]).toContain("isn't a valid Norwegian organisation number");
+    norwegian.client.peppolId = "0192:923609016";
+    expect(buildEinvoiceModel(norwegian).ok).toBe(true);
+    expect(isValidNorwegianOrgNumber("923609016")).toBe(true);
+    expect(isValidSwedishOrgNumber("5560360793")).toBe(true);
+    expect(isValidSwedishOrgNumber("556036079")).toBe(false);
+  });
+
+  it("checks Swedish and Norwegian sellers' VAT numbers and rates", () => {
+    const swedish = fixture("danish-buyer");
+    swedish.business.postalAddress = { ...swedish.business.postalAddress!, country: "SE" };
+    swedish.business.vatNumber = "SE5560360793";
+    swedish.business.peppolId = "0007:5560360793";
+    expect(missing(swedish)).toEqual(["Your VAT number as SE followed by 12 digits (Settings)"]);
+    swedish.business.vatNumber = "SE556036079301";
+    expect(buildEinvoiceModel(swedish).ok).toBe(true);
+    swedish.invoice.taxTreatment = "standard";
+    swedish.invoice.vatexCode = null;
+    swedish.invoice.taxRatePercent = "19";
+    expect(missing(swedish)).toEqual(["A Swedish VAT rate (6, 12 or 25%) on the invoice"]);
+
+    const norwegian = fixture("danish-buyer");
+    norwegian.business.postalAddress = { ...norwegian.business.postalAddress!, country: "NO" };
+    norwegian.business.vatNumber = "NO923609016";
+    norwegian.business.peppolId = "0192:923609016";
+    expect(missing(norwegian)).toEqual([
+      "Your VAT number as NO, your 9-digit organisation number and MVA (Settings)",
+    ]);
+    norwegian.business.vatNumber = "NO 923 609 016 MVA";
+    expect(buildEinvoiceModel(norwegian).ok).toBe(true);
+  });
+
+  it("derives a client's register only when the number has its shape", () => {
+    expect(clientCompanyId("DK 29 40 34 73", "DK")).toEqual({ id: "29403473", scheme: "0184" });
+    expect(clientCompanyId("12345678901234567890", "NL")).toEqual({
+      id: "12345678901234567890",
+      scheme: "0190",
+    });
+    expect(clientCompanyId("12345678", "DE")).toEqual({ id: "12345678", scheme: null });
+    expect(clientCompanyId("  ", "NL")).toBeNull();
+    expect(companyIdOf("HRB 99", null)).toEqual({ id: "HRB 99", scheme: null });
+    expect(companyIdOf("5560 3607-93", "0007")).toEqual({ id: "5560360793", scheme: "0007" });
   });
 });
 

@@ -71,7 +71,7 @@ function party(
     (p.vatId
       ? `<cac:PartyTaxScheme>${el("cbc:CompanyID", p.vatId)}<cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>`
       : "") +
-    `<cac:PartyLegalEntity>${el("cbc:RegistrationName", p.name)}${el("cbc:CompanyID", p.companyId)}</cac:PartyLegalEntity>` +
+    `<cac:PartyLegalEntity>${el("cbc:RegistrationName", p.name)}${el("cbc:CompanyID", p.companyId, p.companyIdScheme ? ` schemeID="${esc(p.companyIdScheme)}"` : "")}</cac:PartyLegalEntity>` +
     (p.contact
       ? "<cac:Contact>" +
         el("cbc:Name", p.contact.name) +

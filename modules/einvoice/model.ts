@@ -5,7 +5,19 @@
 import type { PostalAddress } from "@/lib/postal-address";
 import { minorUnitDigits } from "@/modules/billing/currency";
 
-import { endpointFromVat, normalizeVatId, type EndpointId } from "./peppol-ids";
+import { parsePeppolId } from "@/lib/einvoice-codes";
+
+import {
+  clientCompanyId,
+  companyIdOf,
+  endpointFromCompanyId,
+  endpointFromVat,
+  isWellFormedRegisterNumber,
+  normalizeVatId,
+  REGISTER_NAMES,
+  type CompanyId,
+  type EndpointId,
+} from "./peppol-ids";
 
 export type TaxTreatment = "standard" | "zero_rated" | "reverse_charge";
 
@@ -46,12 +58,18 @@ export type EinvoiceSource = {
     bic: string | null;
     // Seller contact (BG-6): required between two German parties.
     contact: EinvoiceContact | null;
+    // Explicit Peppol ID ("scheme:value") and company registration number
+    // with its register (#5075).
+    peppolId: string | null;
+    companyNumber: string | null;
+    companyNumberScheme: string | null;
   };
   client: {
     name: string;
     postalAddress: PostalAddress | null;
     vatNumber: string | null;
     companyNumber: string | null;
+    peppolId: string | null;
   };
   // Set when the document is a credit note (#5042, type 381): the invoice
   // it corrects (BG-3). The "invoice" above then holds the credit note's
@@ -80,6 +98,8 @@ export type EinvoiceParty = {
   };
   vatId: string | null;
   companyId: string | null;
+  // ISO 6523 ICD code of the register the company ID is from, when known.
+  companyIdScheme: string | null;
   contact: EinvoiceContact | null;
 };
 
@@ -235,6 +255,9 @@ function nationalRules(
   source: EinvoiceSource,
   sellerCountry: string | null,
   buyerCountry: string | null,
+  sellerCompany: CompanyId | null,
+  buyerCompany: CompanyId | null,
+  sellerVat: string | null,
 ): string[] {
   const { business, client } = source;
   const out: string[] = [];
@@ -259,11 +282,88 @@ function nationalRules(
       out.push(`The city and postcode of ${client.name}'s address (the client's page)`);
     }
   }
+  const sellerAddressParts =
+    "The street, city and postcode of your business address (Settings -> E-invoicing)";
+  const buyerAddressParts = `The street, city and postcode of ${client.name}'s address (the client's page)`;
   if (sellerCountry === "NL") {
-    // NL-R-003: a KVK or OIN number, which Clerq doesn't store yet.
-    out.push(
-      "A KVK number for your business: Dutch e-invoices need one, and Clerq can't add it to the export yet",
-    );
+    // NL-R-003: the legal entity ID is a KVK (0106) or OIN (0190) number.
+    if (!sellerCompany || !["0106", "0190"].includes(sellerCompany.scheme ?? "")) {
+      out.push(
+        "Your KVK number (Settings -> E-invoicing: company number, with the register set to 0106 KVK or 0190 OIN)",
+      );
+    }
+    // NL-R-002.
+    if (!seller?.street || !seller.city || !seller.postcode) {
+      out.push(sellerAddressParts);
+    }
+    // NL-R-007: an invoice that is to be paid names how.
+    if (!source.creditNote && source.invoice.totalMinor > 0 && !business.iban) {
+      out.push("Your IBAN (Settings -> E-invoicing): Dutch invoices need payment instructions");
+    }
+    if (buyerCountry === "NL") {
+      // NL-R-004, NL-R-005.
+      if (!buyer?.street || !buyer.city || !buyer.postcode) {
+        out.push(buyerAddressParts);
+      }
+      if (buyerCompany && !["0106", "0190"].includes(buyerCompany.scheme ?? "")) {
+        out.push(
+          `${client.name}'s company number as a KVK number (8 digits) or an OIN (20 digits), or leave it empty`,
+        );
+      }
+    }
+  }
+  if (sellerCountry === "DK") {
+    // DK-R-002, DK-R-014: the CVR number, from register 0184.
+    if (sellerCompany?.scheme !== "0184") {
+      out.push(
+        "Your CVR number (Settings -> E-invoicing: company number, with the register set to 0184 CVR)",
+      );
+    }
+    // DK-R-017.
+    if (buyerCountry === "DK" && buyerCompany && buyerCompany.scheme !== "0184") {
+      out.push(`${client.name}'s company number as a CVR number (8 digits), or leave it empty`);
+    }
+  }
+  if (sellerCountry === "IS") {
+    // IS-R-002, IS-R-003.
+    if (sellerCompany?.scheme !== "0196") {
+      out.push(
+        "Your kennitala (Settings -> E-invoicing: company number, with the register set to 0196)",
+      );
+    }
+    if (!seller?.street || !seller.postcode) {
+      out.push(sellerAddressParts);
+    }
+    if (buyerCountry === "IS") {
+      // IS-R-004, IS-R-005.
+      if (buyerCompany?.scheme !== "0196") {
+        out.push(`${client.name}'s kennitala (10 digits) as the company number (the client's page)`);
+      }
+      if (!buyer?.street || !buyer.postcode) {
+        out.push(buyerAddressParts);
+      }
+    }
+  }
+  if (sellerCountry === "SE") {
+    // SE-R-001/002, SE-R-003/004/013, SE-R-006.
+    if (sellerVat && !/^SE\d{12}$/.test(sellerVat)) {
+      out.push("Your VAT number as SE followed by 12 digits (Settings)");
+    }
+    if (sellerCompany && sellerCompany.scheme !== "0007") {
+      out.push(
+        "Your organisationsnummer (Settings -> E-invoicing: company number, with the register set to 0007)",
+      );
+    }
+    if (
+      source.invoice.taxTreatment === "standard" &&
+      ![6, 12, 25].includes(Number(source.invoice.taxRatePercent))
+    ) {
+      out.push("A Swedish VAT rate (6, 12 or 25%) on the invoice");
+    }
+  }
+  if (sellerCountry === "NO" && sellerVat && !/^NO\d{9}MVA$/.test(sellerVat)) {
+    // NO-R-001.
+    out.push("Your VAT number as NO, your 9-digit organisation number and MVA (Settings)");
   }
   if (sellerCountry === "IT" && (!seller?.street || !seller.city || !seller.postcode)) {
     // IT-R-002/003/004.
@@ -312,26 +412,46 @@ export function buildEinvoiceModel(source: EinvoiceSource): EinvoiceResult {
     missing.push(`${client.name}'s VAT number (needed for ${category === "AE" ? "reverse charge" : "intra-community supply"})`);
   }
 
-  const sellerEndpoint = endpointFromVat(business.vatNumber, sellerCountry);
+  const sellerCompany = companyIdOf(business.companyNumber, business.companyNumberScheme);
+  const buyerCompany = clientCompanyId(client.companyNumber, buyerCountry);
+  // The Peppol address: the one typed in (#5075), else the company number
+  // where the country's Peppol addresses go by it, else the VAT number.
+  const sellerEndpoint =
+    parsePeppolId(business.peppolId) ??
+    endpointFromCompanyId(sellerCompany, sellerCountry) ??
+    endpointFromVat(business.vatNumber, sellerCountry);
   if (!sellerEndpoint && sellerCountry) {
     missing.push(
-      business.vatNumber?.trim()
-        ? `A Peppol ID for your business: Clerq can't work one out from a VAT number in ${sellerCountry} yet`
-        : "Your VAT number (Settings)",
+      "Your Peppol ID (Settings -> E-invoicing): Clerq can't work one out from your VAT number",
     );
   }
-  const buyerEndpoint = endpointFromVat(client.vatNumber, buyerCountry);
+  const buyerEndpoint =
+    parsePeppolId(client.peppolId) ??
+    endpointFromCompanyId(buyerCompany, buyerCountry) ??
+    endpointFromVat(client.vatNumber, buyerCountry);
   if (!buyerEndpoint) {
     missing.push(
-      client.vatNumber?.trim() && buyerCountry
-        ? `A Peppol ID for ${client.name}: Clerq can't work one out from a VAT number in ${buyerCountry} yet`
-        : `${client.name}'s VAT number (Peppol addresses the buyer by it)`,
+      `${client.name}'s Peppol ID or VAT number (the client's page): the e-invoice is addressed to it`,
     );
+  }
+  // Numbers a validator would refuse for their register (a typo, mostly).
+  const registerChecks: [string, { scheme: string | null; id: string } | null][] = [
+    ["Your Peppol ID (Settings -> E-invoicing)", sellerEndpoint],
+    ["Your company number (Settings -> E-invoicing)", sellerCompany],
+    [`${client.name}'s Peppol ID (the client's page)`, buyerEndpoint],
+    [`${client.name}'s company number (the client's page)`, buyerCompany],
+  ];
+  for (const [label, value] of registerChecks) {
+    if (value?.scheme && !isWellFormedRegisterNumber(value.scheme, value.id)) {
+      missing.push(`${label}: ${value.id} isn't a valid ${REGISTER_NAMES[value.scheme]}`);
+    }
   }
   if (!invoice.buyerReference?.trim()) {
     missing.push("A buyer reference / PO number on the invoice (Peppol requires one)");
   }
-  missing.push(...nationalRules(source, sellerCountry, buyerCountry));
+  missing.push(
+    ...nationalRules(source, sellerCountry, buyerCountry, sellerCompany, buyerCompany, sellerVat),
+  );
 
   if (missing.length > 0) {
     return { ok: false, missing: [...new Set(missing)] };
@@ -375,14 +495,15 @@ export function buildEinvoiceModel(source: EinvoiceSource): EinvoiceResult {
     postal: PostalAddress,
     endpoint: EndpointId,
     vatId: string | null,
-    companyId: string | null,
+    company: CompanyId | null,
     contact: EinvoiceContact | null,
   ): EinvoiceParty => ({
     name,
     endpoint,
     address: addressOf(postal),
     vatId,
-    companyId,
+    companyId: company?.id ?? null,
+    companyIdScheme: company?.scheme ?? null,
     contact,
   });
 
@@ -413,7 +534,7 @@ export function buildEinvoiceModel(source: EinvoiceSource): EinvoiceResult {
         business.postalAddress as PostalAddress,
         sellerEndpoint as EndpointId,
         sellerVat,
-        null,
+        sellerCompany,
         contactOrNull(business.contact),
       ),
       buyer: party(
@@ -421,7 +542,7 @@ export function buildEinvoiceModel(source: EinvoiceSource): EinvoiceResult {
         client.postalAddress as PostalAddress,
         buyerEndpoint as EndpointId,
         buyerVat,
-        client.companyNumber?.trim() || null,
+        buyerCompany,
         null,
       ),
       // Credit notes keep the payment means: Peppol's DE-R-001 asks for them.

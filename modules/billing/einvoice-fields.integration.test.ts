@@ -86,6 +86,28 @@ afterAll(async () => {
   await pglite.close();
 });
 
+describe("client Peppol ID (#5075)", () => {
+  it("is stored compact, kept when left out and cleared by null", async () => {
+    const withId = await updateClient(db, business.id, user, client.id, {
+      name: "Stadt Musterhausen",
+      contacts: [],
+      peppolId: " 0204 : 04011000-1234512345-06 ",
+    });
+    expect(withId?.peppolId).toBe("0204:04011000-1234512345-06");
+    const kept = await updateClient(db, business.id, user, client.id, {
+      name: "Stadt Musterhausen",
+      contacts: [],
+    });
+    expect(kept?.peppolId).toBe("0204:04011000-1234512345-06");
+    const cleared = await updateClient(db, business.id, user, client.id, {
+      name: "Stadt Musterhausen",
+      contacts: [],
+      peppolId: null,
+    });
+    expect(cleared?.peppolId).toBeNull();
+  });
+});
+
 describe("client buyer reference", () => {
   it("is stored trimmed, kept when left out and cleared by an empty string", async () => {
     expect(client.buyerReference).toBe("04011000-1234512345-06");
