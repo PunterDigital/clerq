@@ -164,6 +164,41 @@ export const EXPORT_ENTITIES: ExportEntity[] = [
         .orderBy(asc(schema.invoiceSequence.year)),
   },
   {
+    // Credit notes against issued invoices (#5042), their lines and their
+    // own numbering counters.
+    key: "creditNotes",
+    table: schema.creditNote,
+    select: (db, businessId) =>
+      db
+        .select()
+        .from(schema.creditNote)
+        .where(eq(schema.creditNote.businessId, businessId))
+        .orderBy(asc(schema.creditNote.createdAt)),
+  },
+  {
+    key: "creditNoteLines",
+    table: schema.creditNoteLine,
+    select: (db, businessId) =>
+      db
+        .select()
+        .from(schema.creditNoteLine)
+        .where(eq(schema.creditNoteLine.businessId, businessId))
+        .orderBy(
+          asc(schema.creditNoteLine.creditNoteId),
+          asc(schema.creditNoteLine.position),
+        ),
+  },
+  {
+    key: "creditNoteSequences",
+    table: schema.creditNoteSequence,
+    select: (db, businessId) =>
+      db
+        .select()
+        .from(schema.creditNoteSequence)
+        .where(eq(schema.creditNoteSequence.businessId, businessId))
+        .orderBy(asc(schema.creditNoteSequence.year)),
+  },
+  {
     // Recurring-invoice schedules (retainers). The invoices they produced are
     // already in `invoices` (with schedule_id); these are the templates.
     key: "invoiceSchedules",

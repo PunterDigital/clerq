@@ -1,4 +1,5 @@
 import { getDb } from "@/db";
+import { recordEinvoiceSent } from "@/modules/billing/credit-notes";
 import { exportEinvoice } from "@/modules/einvoice/service";
 import { getActiveMembership } from "@/server/membership";
 import { getEffectiveSession } from "@/server/session";
@@ -29,6 +30,9 @@ export async function GET(
       { status: 422, headers: { "Content-Type": "text/plain; charset=utf-8" } },
     );
   }
+  // Downloaded = sent as an e-invoice: from now on it is corrected with a
+  // credit note, not voided (#5042).
+  await recordEinvoiceSent(getDb(), membership.businessId, invoiceId);
   return new Response(result.xml, {
     headers: {
       "Content-Type": "application/xml; charset=utf-8",

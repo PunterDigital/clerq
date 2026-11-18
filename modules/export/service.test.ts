@@ -171,6 +171,35 @@ async function seedFullBusiness(
     })
     .returning();
 
+  // A credit note against that invoice (#5042), with its line and counter.
+  const [creditNote] = await db
+    .insert(schema.creditNote)
+    .values({
+      businessId: biz.id,
+      clientId: client.id,
+      invoiceId: invoice.id,
+      number: `CN-2026-0001`,
+      year: 2026,
+      currency,
+      issueDate: new Date(),
+      taxTreatment: "zero_rated",
+      subtotalMinor: 1_000,
+      taxMinor: 0,
+      totalMinor: 1_000,
+    })
+    .returning();
+  await db.insert(schema.creditNoteLine).values({
+    businessId: biz.id,
+    creditNoteId: creditNote.id,
+    invoiceLineId: invoiceLine.id,
+    position: 0,
+    description: `${label} credit`,
+    totalMinor: 1_000,
+  });
+  await db
+    .insert(schema.creditNoteSequence)
+    .values({ businessId: biz.id, year: 2026, nextNumber: 2 });
+
   const [invoiceSchedule] = await db
     .insert(schema.invoiceSchedule)
     .values({

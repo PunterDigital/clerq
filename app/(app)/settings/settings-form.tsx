@@ -43,6 +43,7 @@ export function SettingsForm({
       phone: string | null;
       email: string | null;
     } | null;
+    creditNotePrefix: string;
     currency: string;
     hoursPerDay: number;
     standardRatePct: string | null;
@@ -80,6 +81,7 @@ export function SettingsForm({
   );
   const [vatNumber, setVatNumber] = useState(initial.vatNumber ?? "");
   const [nextNumber, setNextNumber] = useState("");
+  const [creditPrefix, setCreditPrefix] = useState(initial.creditNotePrefix);
 
   const update = useMutation(
     trpc.business.updateSettings.mutationOptions({
@@ -97,6 +99,12 @@ export function SettingsForm({
         setNextNumber("");
         router.refresh();
       },
+    }),
+  );
+
+  const configurePrefix = useMutation(
+    trpc.invoices.configureCreditNotePrefix.mutationOptions({
+      onSuccess: () => router.refresh(),
     }),
   );
 
@@ -448,6 +456,41 @@ export function SettingsForm({
           {configureNumber.isSuccess ? (
             <p className="pt-2 text-sm text-muted-foreground">
               Numbering updated
+            </p>
+          ) : null}
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              configurePrefix.mutate({ prefix: creditPrefix });
+            }}
+            className="flex items-end gap-2 pt-6"
+          >
+            <div className="flex w-44 flex-col gap-2">
+              <Label htmlFor="creditNotePrefix">Credit note prefix</Label>
+              <Input
+                id="creditNotePrefix"
+                maxLength={10}
+                placeholder="CN-"
+                value={creditPrefix}
+                onChange={(e) => setCreditPrefix(e.target.value)}
+              />
+            </div>
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={configurePrefix.isPending}
+            >
+              {configurePrefix.isPending ? "Saving..." : "Save prefix"}
+            </Button>
+          </form>
+          <p className="pt-2 text-sm text-muted-foreground">
+            Credit notes have their own numbers: {creditPrefix.trim()}
+            {currentYear}-0001, {creditPrefix.trim()}
+            {currentYear}-0002, ...
+          </p>
+          {configurePrefix.error ? (
+            <p role="alert" className="pt-2 text-sm text-destructive">
+              {configurePrefix.error.message}
             </p>
           ) : null}
         </CardContent>

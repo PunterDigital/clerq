@@ -118,6 +118,21 @@ export async function profitSummary(
     .from(schema.invoice)
     .where(and(...invoiceScope));
 
+  // Credit notes (#5042) are negative revenue on their own issue date.
+  const creditScope = [eq(schema.creditNote.businessId, businessId)];
+  if (range.from) creditScope.push(gte(schema.creditNote.issueDate, range.from));
+  if (range.to) creditScope.push(lt(schema.creditNote.issueDate, range.to));
+  const creditRows = await db
+    .select({
+      currency: schema.creditNote.currency,
+      totalMinor: schema.creditNote.totalMinor,
+      issueDate: schema.creditNote.issueDate,
+      invoiceStatus: schema.invoice.status,
+    })
+    .from(schema.creditNote)
+    .innerJoin(schema.invoice, eq(schema.creditNote.invoiceId, schema.invoice.id))
+    .where(and(...creditScope));
+
   const expenseScope = [eq(schema.expense.businessId, businessId)];
   if (range.from) expenseScope.push(gte(schema.expense.incurredAt, range.from));
   if (range.to) expenseScope.push(lt(schema.expense.incurredAt, range.to));
@@ -158,11 +173,20 @@ export async function profitSummary(
     .where(and(...labourScope));
 
   const input: ProfitInput = {
-    income: invoiceRows.map((r) => ({
-      currency: r.currency,
-      amountMinor: r.totalMinor,
-      paid: r.status === "paid",
-    })),
+    income: [
+      ...invoiceRows.map((r) => ({
+        currency: r.currency,
+        amountMinor: r.totalMinor,
+        paid: r.status === "paid",
+      })),
+      // A credit note on a paid invoice gives money back (cash and
+      // accrual); on an unpaid one it only cancels what was never received.
+      ...creditRows.map((r) => ({
+        currency: r.currency,
+        amountMinor: -r.totalMinor,
+        paid: r.invoiceStatus === "paid",
+      })),
+    ],
     expenses: expenseRows.map((r) => ({
       currency: r.currency,
       amountMinor: r.amountMinor,

@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 const tabs = [
   { href: "/invoices", label: "Invoices" },
   { href: "/invoices/recurring", label: "Recurring" },
+  { href: "/invoices/credit-notes", label: "Credit notes" },
 ] as const;
 
 export function InvoiceTabs() {

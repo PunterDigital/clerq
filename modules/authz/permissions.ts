@@ -214,8 +214,9 @@ export const PERMISSION_META: Record<
   },
   "invoices.void": {
     group: "Invoices",
-    label: "Void invoices",
-    description: "Void an issued invoice so a corrected copy can be re-issued.",
+    label: "Void and credit invoices",
+    description:
+      "Void an issued invoice, or issue a credit note against it, so a corrected copy can be re-issued.",
   },
   "invoices.delete": {
     group: "Invoices",

@@ -28,6 +28,8 @@ const activityLabels: Record<string, string> = {
   client_archived: "Archived",
   client_unarchived: "Restored from archive",
   project_created: "Project created",
+  invoice_voided: "Invoice voided",
+  credit_note_issued: "Credit note issued",
 };
 
 async function load(clientId: string) {
@@ -117,6 +119,11 @@ export default async function ClientDetailPage({
                         <p className="whitespace-pre-wrap text-sm text-foreground">
                           {(item.payload as { text: string }).text}
                         </p>
+                      ) : null}
+                      {item.type === "credit_note_issued" ? (
+                        <CreditNoteActivity
+                          payload={item.payload as CreditNotePayload}
+                        />
                       ) : null}
                     </li>
                   ))}
@@ -278,5 +285,24 @@ export default async function ClientDetailPage({
         </div>
       </div>
     </div>
+  );
+}
+
+type CreditNotePayload = {
+  number: string;
+  invoiceNumber: string | null;
+  totalMinor: number;
+  currency: string;
+  reason: string | null;
+};
+
+// "CN-2026-0001 credits 2026-0012: -EUR 120.00 (wrong rate)" (#5042).
+function CreditNoteActivity({ payload }: { payload: CreditNotePayload }) {
+  return (
+    <p className="text-sm text-muted-foreground tabular">
+      {payload.number} credits {payload.invoiceNumber}: -
+      {formatMoney(payload.totalMinor, payload.currency)}
+      {payload.reason ? ` (${payload.reason})` : ""}
+    </p>
   );
 }

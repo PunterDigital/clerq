@@ -338,7 +338,7 @@ export function InvoiceDocument({ data }: { data: InvoicePdfData }) {
           <View style={styles.headerRight}>
             <Text style={styles.title}>{data.title}</Text>
             <View style={styles.balanceBox}>
-              <Text style={styles.balanceCaption}>Balance Due</Text>
+              <Text style={styles.balanceCaption}>{data.balanceCaption}</Text>
               <Text style={[styles.balanceAmount, { color: data.brandColor }]}>
                 {data.balanceDueLabel}
               </Text>
@@ -375,6 +375,14 @@ export function InvoiceDocument({ data }: { data: InvoicePdfData }) {
               <>
                 <Text style={styles.metaCaption}>Issued</Text>
                 <Text style={styles.metaLine}>{data.issueDateLabel}</Text>
+              </>
+            ) : null}
+            {data.creditsInvoiceLabel ? (
+              <>
+                <Text style={[styles.metaCaption, styles.metaCaptionStacked]}>
+                  Credits invoice
+                </Text>
+                <Text style={styles.metaLine}>{data.creditsInvoiceLabel}</Text>
               </>
             ) : null}
             {data.dueDateLabel ? (

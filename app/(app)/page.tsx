@@ -18,6 +18,8 @@ const activityLabels: Record<string, string> = {
   client_archived: "Client archived",
   client_unarchived: "Client restored",
   project_created: "Project created",
+  invoice_voided: "Invoice voided",
+  credit_note_issued: "Credit note issued",
 };
 
 function greeting(hour: number): string {

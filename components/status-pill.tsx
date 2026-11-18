@@ -69,6 +69,9 @@ const invoiceStyles = {
   // Voided: muted/struck-through, reusing the neutral draft tokens - a void
   // is a closed-out document, not an active state.
   void: "bg-[var(--status-draft-bg)] text-[var(--status-draft-fg)] line-through",
+  // Credited in full by credit notes (#5042): settled, nothing owed, so it
+  // reuses the closed-out paid tokens.
+  credited: "bg-[var(--status-paid-bg)] text-[var(--status-paid-fg)]",
 } as const;
 
 const invoiceLabels = {
@@ -77,6 +80,7 @@ const invoiceLabels = {
   paid: "Paid",
   overdue: "Overdue",
   void: "Void",
+  credited: "Credited",
 } as const;
 
 export type InvoiceStatus = keyof typeof invoiceStyles;
