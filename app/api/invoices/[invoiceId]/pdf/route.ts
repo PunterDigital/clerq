@@ -62,6 +62,8 @@ export async function GET(
       address: schema.business.address,
       taxConfig: schema.business.taxConfig,
       branding: schema.business.branding,
+      iban: schema.business.iban,
+      bic: schema.business.bic,
     })
     .from(schema.business)
     .where(eq(schema.business.id, businessId));
@@ -91,6 +93,8 @@ export async function GET(
       brandColor: branding.brandColor ?? null,
       logoDataUrl: branding.logoDataUrl ?? null,
       footerNote: branding.footerNote ?? null,
+      iban: businessRow.iban,
+      bic: businessRow.bic,
     },
     client: clientRow,
   });

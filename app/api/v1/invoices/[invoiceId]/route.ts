@@ -6,17 +6,23 @@ import {
 } from "@/server/api/invoices";
 import { invoiceNotesSchema } from "@/server/api/schemas";
 import { ApiError, apiRoute, idParam, readBody } from "@/server/api/v1";
-import { invoiceDetailsSchema } from "@/server/trpc/routers/invoices";
+import {
+  invoiceDetailsSchema,
+  invoiceEinvoiceFieldsSchema,
+} from "@/server/trpc/routers/invoices";
 
 // GET /api/v1/invoices/:invoiceId - one invoice with its lines.
 // PATCH /api/v1/invoices/:invoiceId - a draft's dates ("issueDate",
-// "dueDate", "periodStart", "periodEnd") and "notes"; fields left out keep
+// "dueDate", "periodStart", "periodEnd"), "notes", and the e-invoicing fields
+// "buyerReference" and "vatexCode"; fields left out keep
 // their values, null clears one. 409 once the invoice is issued.
 // DELETE /api/v1/invoices/:invoiceId - delete a draft and release its time.
 // 409 for an issued invoice: void it instead.
 export const dynamic = "force-dynamic";
 
 type Params = { invoiceId: string };
+
+const EINVOICE_FIELDS = ["buyerReference", "vatexCode"] as const;
 
 export const GET = apiRoute<Params>(async (_req, { caller, params }) =>
   caller.invoices.get({ invoiceId: idParam(params.invoiceId, "invoice") }),
@@ -26,10 +32,11 @@ export const PATCH = apiRoute<Params>(async (req, ctx) => {
   const invoiceId = idParam(ctx.params.invoiceId, "invoice");
   const patch = await readBody(req);
   const datesSent = INVOICE_DATE_FIELDS.some((field) => field in patch);
-  if (!datesSent && !("notes" in patch)) {
+  const einvoiceSent = EINVOICE_FIELDS.some((field) => field in patch);
+  if (!datesSent && !einvoiceSent && !("notes" in patch)) {
     throw new ApiError(
       422,
-      `Send at least one of: ${[...INVOICE_DATE_FIELDS, "notes"].join(", ")}`,
+      `Send at least one of: ${[...INVOICE_DATE_FIELDS, ...EINVOICE_FIELDS, "notes"].join(", ")}`,
     );
   }
   invoiceDateFields(patch);
@@ -37,7 +44,17 @@ export const PATCH = apiRoute<Params>(async (req, ctx) => {
 
   // Validate everything before changing anything, so a bad note can't
   // leave the dates half-applied.
-  const details = datesSent
+  const einvoice = einvoiceSent
+    ? invoiceEinvoiceFieldsSchema.parse(
+        Object.fromEntries(
+          EINVOICE_FIELDS.filter((field) => field in patch).map((field) => [
+            field,
+            patch[field],
+          ]),
+        ),
+      )
+    : {};
+  const details = datesSent || einvoiceSent
     ? invoiceDetailsSchema.parse(
         Object.fromEntries(
           INVOICE_DATE_FIELDS.map((field) => [
@@ -49,7 +66,9 @@ export const PATCH = apiRoute<Params>(async (req, ctx) => {
     : null;
   const notes = "notes" in patch ? invoiceNotesSchema.parse({ notes: patch.notes }).notes : undefined;
 
-  if (details) await ctx.caller.invoices.updateDetails({ invoiceId, ...details });
+  if (details) {
+    await ctx.caller.invoices.updateDetails({ invoiceId, ...details, ...einvoice });
+  }
   if (notes !== undefined) {
     await ctx.caller.invoices.setNotes({ invoiceId, notes: notes ?? "" });
   }

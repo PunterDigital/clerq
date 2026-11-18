@@ -3,6 +3,11 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { getDb, schema } from "@/db";
+import {
+  buyerReferenceSchema,
+  unitCodeSchema,
+  vatexCodeSchema,
+} from "@/lib/einvoice-codes";
 import { fetchEcbRate } from "@/modules/billing/fx";
 import {
   addManualLine,
@@ -84,6 +89,12 @@ export const invoiceDetailsSchema = z
   .object(detailsFields)
   .refine(periodInOrder, periodRule);
 
+// E-invoicing fields on a draft (#5039). Left out = keep, null clears.
+export const invoiceEinvoiceFieldsSchema = z.object({
+  buyerReference: buyerReferenceSchema.optional(),
+  vatexCode: vatexCodeSchema.nullable().optional(),
+});
+
 export const generateFromTimeSchema = z.object({
   invoiceId: z.string().uuid(),
   projectId: z.string().uuid().optional(),
@@ -112,6 +123,9 @@ export const lineInputSchema = z.object({
     .string()
     .trim()
     .regex(/^\d+(\.\d+)?$/, "Enter a plain amount like 1500 or 1500.00"),
+  // UN/ECE Rec 20 unit code. Left out: C62 for a new line; on an edit the
+  // stored code stays, unless the amount changes (then C62).
+  unitCode: unitCodeSchema.optional(),
 });
 
 export const invoicesRouter = createTRPCRouter({
@@ -232,7 +246,11 @@ export const invoicesRouter = createTRPCRouter({
   updateDetails: permissionProcedure("invoices.edit")
     .input(
       z
-        .object({ invoiceId: z.string().uuid(), ...detailsFields })
+        .object({
+          invoiceId: z.string().uuid(),
+          ...detailsFields,
+          ...invoiceEinvoiceFieldsSchema.shape,
+        })
         .refine(periodInOrder, periodRule),
     )
     .mutation(async ({ ctx, input }) => {
@@ -245,6 +263,8 @@ export const invoicesRouter = createTRPCRouter({
           dueDate: input.dueDate,
           periodStart: input.periodStart,
           periodEnd: input.periodEnd,
+          buyerReference: input.buyerReference,
+          vatexCode: input.vatexCode,
         },
       );
       if (!updated) {

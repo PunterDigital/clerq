@@ -51,6 +51,11 @@ export const business = pgTable("business", {
   // for a business whose postal address is in the EEA (lib/eea.ts). While
   // off, no e-invoicing UI is shown; saved data stays.
   einvoicingEnabled: boolean("einvoicing_enabled").notNull().default(false),
+  // Optional bank details for the payment instructions on invoices and
+  // e-invoices (EN 16931 BG-17, UNCL4461 code 58). Format-checked in
+  // lib/einvoice-codes.ts (IBAN checksum); printed on the PDF when set.
+  iban: text("iban"),
+  bic: text("bic"),
   // ISO 4217 code for the business's base currency. Stored as data only -
   // all interpretation (conversion, rounding) belongs to the billing module.
   currency: text("currency").notNull(),
@@ -213,6 +218,9 @@ export const client = pgTable(
     // Structured copy for e-invoices (EN 16931 BG-8). Mirrors
     // business.postalAddress.
     postalAddress: jsonb("postal_address").$type<PostalAddress>(),
+    // Default buyer reference / PO number (EN 16931 BT-10, Peppol R003,
+    // XRechnung Leitweg-ID), copied onto each new invoice for the client.
+    buyerReference: text("buyer_reference"),
     // Company / registration number (e.g. Companies House number, IČO).
     // Printed under the client on invoices when set.
     companyNumber: text("company_number"),
@@ -574,6 +582,11 @@ export const invoice = pgTable(
     }).notNull(),
     taxRatePercent: text("tax_rate_percent").notNull().default("0"),
     taxNote: text("tax_note"),
+    // VATEX exemption reason code (EN 16931 BT-121), e.g. VATEX-EU-AE for
+    // reverse charge. Optional; only e-invoices need it.
+    vatexCode: text("vatex_code"),
+    // Buyer reference / PO number (BT-10). Starts as the client's default.
+    buyerReference: text("buyer_reference"),
     subtotalMinor: integer("subtotal_minor").notNull().default(0),
     taxMinor: integer("tax_minor").notNull().default(0),
     totalMinor: integer("total_minor").notNull().default(0),
@@ -612,6 +625,9 @@ export const invoiceLine = pgTable(
     quantity: text("quantity"),
     unitPriceMinor: integer("unit_price_minor"),
     totalMinor: integer("total_minor").notNull(),
+    // UN/ECE Rec 20 unit code (BT-130): HUR for lines generated from time,
+    // C62 ("one") for fixed amounts. Allowed codes: lib/einvoice-codes.ts.
+    unitCode: text("unit_code").notNull().default("C62"),
     // ESC-5: when the source rate currency differed, the original total
     // and the conversion applied are recorded on the line.
     sourceCurrency: text("source_currency"),

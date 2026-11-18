@@ -15,6 +15,7 @@ import {
   draftInvoiceInputSchema,
   generateFromTimeSchema,
   invoiceDetailsSchema,
+  invoiceEinvoiceFieldsSchema,
   lineInputSchema,
 } from "@/server/trpc/routers/invoices";
 import { recurringBodySchema } from "@/server/trpc/routers/recurring";
@@ -327,7 +328,13 @@ export const API_OPERATIONS: ApiOperation[] = [
     tag: "Invoices",
     summary: "Change a draft's dates or notes",
     description: "Send at least one field. Fields left out keep their values; null clears one.",
-    body: z.object({ ...invoiceDetailsSchema.shape, ...invoiceNotesSchema.shape }).partial(),
+    body: z
+      .object({
+        ...invoiceDetailsSchema.shape,
+        ...invoiceEinvoiceFieldsSchema.shape,
+        ...invoiceNotesSchema.shape,
+      })
+      .partial(),
     conflict: DRAFT_ONLY,
   },
   {

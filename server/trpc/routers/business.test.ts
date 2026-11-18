@@ -227,6 +227,37 @@ describe("business settings - e-invoicing opt-in (#5065)", () => {
     expect(result.postalAddress?.city).toBe("Berlin");
   });
 
+  it("saves IBAN and BIC with e-invoicing on, checks them, and keeps them when left out (#5039)", async () => {
+    const caller = callerFor("shay");
+    await caller.business.create({ name: "Alpha", currency: "EUR" });
+    await expect(
+      caller.business.updateEinvoicing({
+        enabled: true,
+        postalAddress: berlin,
+        iban: "DE89 3704 0044 0532 0130 01",
+      }),
+    ).rejects.toThrow(/IBAN/);
+    await expect(
+      caller.business.updateEinvoicing({ enabled: true, postalAddress: berlin, bic: "NOPE" }),
+    ).rejects.toThrow(/BIC/);
+
+    const saved = await caller.business.updateEinvoicing({
+      enabled: true,
+      postalAddress: berlin,
+      iban: "de89 3704 0044 0532 0130 00",
+      bic: "cobadeffxxx",
+    });
+    expect(saved).toMatchObject({ iban: "DE89370400440532013000", bic: "COBADEFFXXX" });
+
+    await caller.business.updateEinvoicing({ enabled: true });
+    let settings = await caller.business.settings();
+    expect(settings).toMatchObject({ iban: "DE89370400440532013000", bic: "COBADEFFXXX" });
+
+    await caller.business.updateEinvoicing({ enabled: true, iban: "", bic: null });
+    settings = await caller.business.settings();
+    expect(settings).toMatchObject({ iban: null, bic: null });
+  });
+
   it("turning it off keeps the address, and turning it back on brings it back", async () => {
     const caller = callerFor("shay");
     await caller.business.create({ name: "Alpha", currency: "EUR" });

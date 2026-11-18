@@ -360,6 +360,14 @@ export function InvoiceDocument({ data }: { data: InvoicePdfData }) {
                 <Text style={styles.metaLine}>{data.periodLabel}</Text>
               </>
             ) : null}
+            {data.buyerReference ? (
+              <>
+                <Text style={[styles.metaCaption, styles.metaCaptionStacked]}>
+                  Your reference
+                </Text>
+                <Text style={styles.metaLine}>{data.buyerReference}</Text>
+              </>
+            ) : null}
           </View>
         </View>
 
@@ -404,6 +412,16 @@ export function InvoiceDocument({ data }: { data: InvoicePdfData }) {
         </View>
 
         {data.taxNote ? <Text style={styles.taxNote}>{data.taxNote}</Text> : null}
+        {data.paymentLines.length > 0 ? (
+          <View style={styles.notesBlock} wrap={false}>
+            <Text style={styles.notesCaption}>Payment details</Text>
+            {data.paymentLines.map((line, i) => (
+              <Text key={i} style={styles.notes}>
+                {line}
+              </Text>
+            ))}
+          </View>
+        ) : null}
         {noteLines.length > 0 ? (
           <View style={styles.notesBlock}>
             {/* The caption travels with its first note, so the heading is

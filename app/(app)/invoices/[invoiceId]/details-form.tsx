@@ -14,6 +14,11 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  suggestedVatexCode,
+  VATEX_CODES,
+  type VatexCode,
+} from "@/lib/einvoice-codes";
 import { useTRPC } from "@/server/trpc/client";
 
 // A stored timestamp -> the yyyy-mm-dd a date input expects. Dates are kept at
@@ -37,12 +42,19 @@ export function DetailsForm({
   dueDate,
   periodStart,
   periodEnd,
+  einvoicing,
 }: {
   invoiceId: string;
   issueDate: Date | null;
   dueDate: Date | null;
   periodStart: Date | null;
   periodEnd: Date | null;
+  // Set while e-invoicing is on (#5039): buyer reference and VATEX code.
+  einvoicing?: {
+    buyerReference: string | null;
+    vatexCode: string | null;
+    taxTreatment: "standard" | "zero_rated" | "reverse_charge";
+  } | null;
 }) {
   const router = useRouter();
   const trpc = useTRPC();
@@ -50,6 +62,13 @@ export function DetailsForm({
   const [due, setDue] = useState(toDateInput(dueDate));
   const [start, setStart] = useState(toDateInput(periodStart));
   const [end, setEnd] = useState(toDateInput(periodEnd));
+  const [buyerReference, setBuyerReference] = useState(
+    einvoicing?.buyerReference ?? "",
+  );
+  const [vatexCode, setVatexCode] = useState(einvoicing?.vatexCode ?? "");
+  const suggestion = einvoicing
+    ? suggestedVatexCode(einvoicing.taxTreatment)
+    : null;
 
   const save = useMutation(
     trpc.invoices.updateDetails.mutationOptions({
@@ -76,6 +95,12 @@ export function DetailsForm({
               dueDate: fromDateInput(due),
               periodStart: fromDateInput(start),
               periodEnd: fromDateInput(end),
+              ...(einvoicing
+                ? {
+                    buyerReference: buyerReference.trim() || null,
+                    vatexCode: (vatexCode || null) as VatexCode | null,
+                  }
+                : {}),
             });
           }}
           className="flex flex-col gap-4"
@@ -121,6 +146,47 @@ export function DetailsForm({
               />
             </div>
           </div>
+
+          {einvoicing ? (
+            <div className="flex flex-wrap gap-4">
+              <div className="flex flex-1 flex-col gap-2">
+                <Label htmlFor="buyer-reference">
+                  Buyer reference / PO number
+                </Label>
+                <Input
+                  id="buyer-reference"
+                  value={buyerReference}
+                  maxLength={200}
+                  onChange={(e) => setBuyerReference(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-1 flex-col gap-2">
+                <Label htmlFor="vatex-code">VAT exemption code (VATEX)</Label>
+                <select
+                  id="vatex-code"
+                  value={vatexCode}
+                  onChange={(e) => setVatexCode(e.target.value)}
+                  className="h-9 rounded-md border bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40"
+                >
+                  <option value="">None</option>
+                  {VATEX_CODES.map((v) => (
+                    <option key={v.code} value={v.code}>
+                      {v.code} - {v.label}
+                    </option>
+                  ))}
+                </select>
+                {suggestion && vatexCode !== suggestion ? (
+                  <button
+                    type="button"
+                    className="self-start text-xs text-muted-foreground underline underline-offset-4"
+                    onClick={() => setVatexCode(suggestion)}
+                  >
+                    Use {suggestion} (reverse charge)
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           {save.error ? (
             <p role="alert" className="text-sm text-destructive">

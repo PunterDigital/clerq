@@ -62,6 +62,13 @@ const clientFields = {
     .describe(
       "The same address in parts, used for e-invoices (EN 16931). Not printed on the PDF. Left out on update = kept as is; null clears it.",
     ),
+  buyerReference: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      "Default buyer reference / PO number, copied onto each new invoice for this client (e-invoicing BT-10; XRechnung Leitweg-ID). Left out on update = kept; null or empty clears it.",
+    ),
   companyNumber: z
     .string()
     .nullable()
@@ -831,6 +838,12 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
           .string()
           .regex(/^\d+(\.\d+)?$/)
           .describe("Major units as a decimal string, e.g. 1500.00 (not cents)."),
+        unitCode: z
+          .enum(["HUR", "DAY", "WEE", "MON", "ANN", "C62"])
+          .optional()
+          .describe(
+            "UN/ECE Rec 20 unit code for e-invoices: HUR hours, DAY days, WEE weeks, MON months, ANN years, C62 a fixed amount (the default).",
+          ),
       },
     },
     (args) =>
@@ -850,6 +863,12 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
           .string()
           .regex(/^\d+(\.\d+)?$/)
           .describe("Major units as a decimal string, e.g. 1500.00 (not cents)."),
+        unitCode: z
+          .enum(["HUR", "DAY", "WEE", "MON", "ANN", "C62"])
+          .optional()
+          .describe(
+            "UN/ECE Rec 20 unit code (HUR, DAY, WEE, MON, ANN, C62). Left out = kept, except that a changed amount makes the line C62.",
+          ),
       },
     },
     (args) =>
@@ -878,9 +897,37 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
           .nullable()
           .optional()
           .describe(`End of the billing period. ${ISO}`),
+        buyerReference: z
+          .string()
+          .nullable()
+          .optional()
+          .describe(
+            "Buyer reference / PO number (e-invoicing BT-10). Starts as the client's default. Left out = kept; null or empty clears it.",
+          ),
+        vatexCode: z
+          .enum([
+            "VATEX-EU-AE",
+            "VATEX-EU-IC",
+            "VATEX-EU-G",
+            "VATEX-EU-O",
+            "VATEX-EU-79-C",
+          ])
+          .nullable()
+          .optional()
+          .describe(
+            "VATEX exemption reason code for e-invoices, e.g. VATEX-EU-AE for reverse charge. Left out = kept; null clears it.",
+          ),
       },
     },
-    ({ invoiceId, issueDate, dueDate, periodStart, periodEnd }) =>
+    ({
+      invoiceId,
+      issueDate,
+      dueDate,
+      periodStart,
+      periodEnd,
+      buyerReference,
+      vatexCode,
+    }) =>
       runTool(async () =>
         toolJson(
           await caller.invoices.updateDetails({
@@ -889,6 +936,8 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
             dueDate: dueDate ? new Date(dueDate) : null,
             periodStart: periodStart ? new Date(periodStart) : null,
             periodEnd: periodEnd ? new Date(periodEnd) : null,
+            buyerReference,
+            vatexCode,
           }),
         ),
       ),

@@ -216,6 +216,73 @@ describe("/api/v1/invoices", () => {
     expect((await getInvoice(invoiceId)).lines).toHaveLength(0);
   });
 
+  it("carries the e-invoicing fields: client buyer reference, invoice override, VATEX code and line unit (#5039)", async () => {
+    const { POST } = await clientsRoute();
+    const client = await call(POST, "POST", "/api/v1/clients", writeA, {
+      body: { name: "Stadt Musterhausen", buyerReference: "04011000-1234512345-06" },
+    });
+    expect(client.status).toBe(201);
+    expect(client.body.buyerReference).toBe("04011000-1234512345-06");
+    const invoiceId = await makeDraft(writeA, client.body.id);
+    expect((await getInvoice(invoiceId)).buyerReference).toBe("04011000-1234512345-06");
+
+    const { POST: postLine } = await linesRoute();
+    const added = await call(postLine, "POST", `/api/v1/invoices/${invoiceId}/lines`, writeA, {
+      params: { invoiceId },
+      body: { description: "Workshop", amountMajor: "900", unitCode: "DAY" },
+    });
+    expect(added.status).toBe(201);
+    const lineId = (await getInvoice(invoiceId)).lines[0].id;
+    expect((await getInvoice(invoiceId)).lines[0].unitCode).toBe("DAY");
+
+    const { PATCH: patchLine } = await lineRoute();
+    const badUnit = await call(
+      patchLine,
+      "PATCH",
+      `/api/v1/invoices/${invoiceId}/lines/${lineId}`,
+      writeA,
+      { params: { invoiceId, lineId }, body: { unitCode: "XYZ" } },
+    );
+    expect(badUnit.status).toBe(422);
+    const renamed = await call(
+      patchLine,
+      "PATCH",
+      `/api/v1/invoices/${invoiceId}/lines/${lineId}`,
+      writeA,
+      { params: { invoiceId, lineId }, body: { description: "Workshop, day 1" } },
+    );
+    expect(renamed.status).toBe(200);
+    expect((await getInvoice(invoiceId)).lines[0].unitCode).toBe("DAY");
+
+    const { PATCH } = await invoiceRoute();
+    const set = await call(PATCH, "PATCH", `/api/v1/invoices/${invoiceId}`, writeA, {
+      params: { invoiceId },
+      body: { buyerReference: "PO-7781", vatexCode: "VATEX-EU-AE" },
+    });
+    expect(set.status).toBe(200);
+    expect(set.body).toMatchObject({ buyerReference: "PO-7781", vatexCode: "VATEX-EU-AE" });
+
+    // Dates only: the e-invoicing fields stay.
+    const dates = await call(PATCH, "PATCH", `/api/v1/invoices/${invoiceId}`, writeA, {
+      params: { invoiceId },
+      body: { dueDate: "2026-12-31" },
+    });
+    expect(dates.body).toMatchObject({ buyerReference: "PO-7781", vatexCode: "VATEX-EU-AE" });
+
+    const badVatex = await call(PATCH, "PATCH", `/api/v1/invoices/${invoiceId}`, writeA, {
+      params: { invoiceId },
+      body: { vatexCode: "VATEX-NOPE" },
+    });
+    expect(badVatex.status).toBe(422);
+    expect(badVatex.body.error.message).toMatch(/^vatexCode: /);
+
+    const cleared = await call(PATCH, "PATCH", `/api/v1/invoices/${invoiceId}`, writeA, {
+      params: { invoiceId },
+      body: { buyerReference: null, vatexCode: null },
+    });
+    expect(cleared.body).toMatchObject({ buyerReference: null, vatexCode: null });
+  });
+
   it("names the field when a draft is invalid", async () => {
     const clientId = await makeClient(writeA, "Initech");
     const { POST } = await invoicesRoute();

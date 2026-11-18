@@ -90,7 +90,7 @@ another business or isn't a UUID is a 404.
 | Method and path | What it does |
 | --- | --- |
 | `GET /clients` | List clients, newest first. `?search=` (name contains), `?includeArchived=true` |
-| `POST /clients` | Create a client: `name` (required), `contacts`, `notes`, `address` (free text, printed on invoices), `postalAddress` (the same address in parts for e-invoices: `{ "street", "city", "postcode", "region", "country" }`, `country` an ISO 3166-1 code like `GB` and required, the rest optional; `null` clears it), `companyNumber`, `vatNumber`, `defaultRateMinor`, `defaultRateCurrency`, `defaultRateUnit` (`hour` or `day`), `budgetMinor`, `budgetCurrency` |
+| `POST /clients` | Create a client: `name` (required), `contacts`, `notes`, `address` (free text, printed on invoices), `postalAddress` (the same address in parts for e-invoices: `{ "street", "city", "postcode", "region", "country" }`, `country` an ISO 3166-1 code like `GB` and required, the rest optional; `null` clears it), `buyerReference` (default PO number / buyer reference copied onto each new invoice; `null` clears it), `companyNumber`, `vatNumber`, `defaultRateMinor`, `defaultRateCurrency`, `defaultRateUnit` (`hour` or `day`), `budgetMinor`, `budgetCurrency` |
 | `GET /clients/{id}` | One client |
 | `PATCH /clients/{id}` | Change a client's fields |
 | `POST /clients/{id}/archive` | Archive a client |
@@ -161,10 +161,10 @@ A change the status doesn't allow is a 409.
 | `GET /invoices` | List invoices, newest first, with `clientName`. `?status=`, `?clientId=`, `?search=` (number or client name contains) |
 | `POST /invoices` | Create a draft: `clientId`, `currency` and `taxTreatment` (`standard`, `zero_rated`, `reverse_charge`) required; `projectId`, `issueDate`, `dueDate`, `periodStart`, `periodEnd` |
 | `GET /invoices/{id}` | One invoice with its `lines` |
-| `PATCH /invoices/{id}` | Change a draft's `issueDate`, `dueDate`, `periodStart`, `periodEnd` or `notes` |
+| `PATCH /invoices/{id}` | Change a draft's `issueDate`, `dueDate`, `periodStart`, `periodEnd`, `notes`, `buyerReference` (PO number; starts as the client's) or `vatexCode` (`VATEX-EU-AE`, `VATEX-EU-IC`, `VATEX-EU-G`, `VATEX-EU-O`, `VATEX-EU-79-C`); `null` clears the last two |
 | `DELETE /invoices/{id}` | Delete a draft; its time goes back to unbilled. 409 for an issued invoice: void it instead |
-| `POST /invoices/{id}/lines` | Add a fixed-amount line to a draft: `{ "description", "amountMajor": "1500.00" }` |
-| `PATCH /invoices/{id}/lines/{lineId}` | Change a draft line's `description` or `amountMajor`. A new amount replaces its hours x rate breakdown |
+| `POST /invoices/{id}/lines` | Add a fixed-amount line to a draft: `{ "description", "amountMajor": "1500.00" }`, optionally `unitCode` (UN/ECE Rec 20: `HUR`, `DAY`, `WEE`, `MON`, `ANN`, `C62`; default `C62`) |
+| `PATCH /invoices/{id}/lines/{lineId}` | Change a draft line's `description`, `amountMajor` or `unitCode`. A new amount replaces its hours x rate breakdown and, unless `unitCode` is sent too, makes it `C62`. Lines generated from time are `HUR` |
 | `DELETE /invoices/{id}/lines/{lineId}` | Remove a draft line; its time goes back to unbilled |
 | `POST /invoices/{id}/generate-from-time` | Fill a draft from the client's unbilled billable time: `grouping` (`person_rate`, `task`, `single`) required; `projectId`, `includeTaskList` (task titles in each description), `includeNotes` (timesheet notes under each description), `replace` (regenerate the time lines), `fxRates` |
 | `POST /invoices/{id}/issue` | Number the draft and mark it sent |

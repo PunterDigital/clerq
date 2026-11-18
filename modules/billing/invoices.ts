@@ -2,6 +2,7 @@ import { and, eq, isNotNull, max, sql } from "drizzle-orm";
 
 import type { Db } from "@/db";
 import { schema } from "@/db";
+import { normalizeBuyerReference } from "@/lib/einvoice-codes";
 
 import { invoiceTotals, type TaxTreatment } from "./tax";
 
@@ -33,7 +34,10 @@ export async function createDraftInvoice(
 ) {
   // The client (and project, when given) must belong to the business.
   const [clientRow] = await db
-    .select({ id: schema.client.id })
+    .select({
+      id: schema.client.id,
+      buyerReference: schema.client.buyerReference,
+    })
     .from(schema.client)
     .where(
       and(
@@ -77,6 +81,8 @@ export async function createDraftInvoice(
       taxTreatment: input.taxTreatment,
       taxRatePercent: totals.taxRatePercent,
       taxNote: totals.taxNote,
+      // The client's default PO number / buyer reference; editable per draft.
+      buyerReference: clientRow.buyerReference,
       issueDate: input.issueDate ?? null,
       dueDate: input.dueDate ?? null,
       periodStart: input.periodStart ?? null,
@@ -128,6 +134,8 @@ export async function duplicateInvoice(
         taxTreatment: source.taxTreatment,
         taxRatePercent: source.taxRatePercent,
         taxNote: source.taxNote,
+        vatexCode: source.vatexCode,
+        buyerReference: source.buyerReference,
         dueDate: source.dueDate,
         periodStart: source.periodStart,
         periodEnd: source.periodEnd,
@@ -145,6 +153,7 @@ export async function duplicateInvoice(
           quantity: line.quantity,
           unitPriceMinor: line.unitPriceMinor,
           totalMinor: line.totalMinor,
+          unitCode: line.unitCode,
           sourceCurrency: line.sourceCurrency,
           sourceTotalMinor: line.sourceTotalMinor,
           fxRate: line.fxRate,
@@ -187,6 +196,9 @@ export async function updateInvoiceDetails(
     dueDate: Date | null;
     periodStart: Date | null;
     periodEnd: Date | null;
+    // E-invoicing fields (#5039): left out = keep, null = clear.
+    buyerReference?: string | null;
+    vatexCode?: string | null;
   },
 ) {
   const [updated] = await db
@@ -196,6 +208,10 @@ export async function updateInvoiceDetails(
       dueDate: input.dueDate,
       periodStart: input.periodStart,
       periodEnd: input.periodEnd,
+      ...(input.buyerReference !== undefined
+        ? { buyerReference: normalizeBuyerReference(input.buyerReference) }
+        : {}),
+      ...(input.vatexCode !== undefined ? { vatexCode: input.vatexCode } : {}),
       updatedAt: new Date(),
     })
     .where(
