@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { listCountryOptions } from "@/lib/countries";
 import { caller } from "@/server/trpc/server";
 
 import { ClientForm, type ClientFormValues } from "../../client-form";
@@ -26,6 +27,7 @@ export default async function EditClientPage({
       contacts: client.contacts as ClientFormValues["contacts"],
       notes: client.notes ?? undefined,
       address: client.address,
+      postalAddress: client.postalAddress,
       companyNumber: client.companyNumber,
       vatNumber: client.vatNumber,
       defaultRateMinor: client.defaultRateMinor,
@@ -44,7 +46,11 @@ export default async function EditClientPage({
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
       <h1 className="text-2xl">Edit client</h1>
-      <ClientForm clientId={clientId} initial={initial} />
+      <ClientForm
+        clientId={clientId}
+        initial={initial}
+        countryOptions={listCountryOptions()}
+      />
     </div>
   );
 }

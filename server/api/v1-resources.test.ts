@@ -178,6 +178,44 @@ describe("/api/v1/clients", () => {
     expect(got.body).toMatchObject({ id, name: "Acme Group", archivedAt: null });
   });
 
+  it("sets, keeps and clears the structured postal address; refuses a bad country", async () => {
+    const { GET: get, PATCH } = await clientRoute();
+    const id = await makeClient(writeA, "Postal Co");
+    const set = await call(PATCH, "PATCH", `/api/v1/clients/${id}`, writeA, {
+      params: { clientId: id },
+      body: { postalAddress: { street: "Damrak 1", city: "Amsterdam", postcode: "1012 LG", country: "nl" } },
+    });
+    expect(set.status).toBe(200);
+    expect(set.body.postalAddress).toEqual({
+      street: "Damrak 1",
+      city: "Amsterdam",
+      postcode: "1012 LG",
+      region: null,
+      country: "NL",
+    });
+
+    // A PATCH of another field keeps it.
+    await call(PATCH, "PATCH", `/api/v1/clients/${id}`, writeA, {
+      params: { clientId: id },
+      body: { name: "Postal Company" },
+    });
+    const got = await call(get, "GET", `/api/v1/clients/${id}`, readA, { params: { clientId: id } });
+    expect(got.body.postalAddress?.city).toBe("Amsterdam");
+
+    const bad = await call(PATCH, "PATCH", `/api/v1/clients/${id}`, writeA, {
+      params: { clientId: id },
+      body: { postalAddress: { city: "Nowhere", country: "ZZ" } },
+    });
+    expect(bad.status).toBe(422);
+    expect(JSON.stringify(bad.body)).toContain("postalAddress");
+
+    const cleared = await call(PATCH, "PATCH", `/api/v1/clients/${id}`, writeA, {
+      params: { clientId: id },
+      body: { postalAddress: null },
+    });
+    expect(cleared.body.postalAddress).toBeNull();
+  });
+
   it("adds a note and lists it in the activity thread", async () => {
     const id = await makeClient(writeA, "Noted");
     const { POST } = await notesRoute();

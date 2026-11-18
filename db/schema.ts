@@ -14,6 +14,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import type { PostalAddress } from "../lib/postal-address";
 import { user } from "./auth-schema";
 
 // Tenancy rule: every table holding business data carries business_id and
@@ -42,6 +43,10 @@ export const business = pgTable("business", {
   name: text("name").notNull(),
   // Postal address as entered, newline-separated; printed on invoices.
   address: text("address"),
+  // The same address in parts (street, city, postcode, region, ISO 3166-1
+  // country) for e-invoices (EN 16931 BG-5). Optional; the PDF still prints
+  // `address`. Shape and validation: lib/postal-address.ts.
+  postalAddress: jsonb("postal_address").$type<PostalAddress>(),
   // ISO 4217 code for the business's base currency. Stored as data only -
   // all interpretation (conversion, rounding) belongs to the billing module.
   currency: text("currency").notNull(),
@@ -201,6 +206,9 @@ export const client = pgTable(
     // Postal address as entered, newline-separated; printed on invoices in
     // the "Billed to" block. Mirrors business.address.
     address: text("address"),
+    // Structured copy for e-invoices (EN 16931 BG-8). Mirrors
+    // business.postalAddress.
+    postalAddress: jsonb("postal_address").$type<PostalAddress>(),
     // Company / registration number (e.g. Companies House number, IČO).
     // Printed under the client on invoices when set.
     companyNumber: text("company_number"),

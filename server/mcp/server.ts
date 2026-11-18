@@ -39,6 +39,29 @@ const clientFields = {
     .nullable()
     .optional()
     .describe("Postal address, newline-separated; printed on invoices."),
+  postalAddress: z
+    .object({
+      street: z
+        .string()
+        .nullable()
+        .optional()
+        .describe("Street and number, up to 3 lines (newline-separated)."),
+      city: z.string().nullable().optional(),
+      postcode: z.string().nullable().optional(),
+      region: z
+        .string()
+        .nullable()
+        .optional()
+        .describe("State, county or province, if the country uses one."),
+      country: z
+        .string()
+        .describe("ISO 3166-1 alpha-2 country code, e.g. GB, DE, FR."),
+    })
+    .nullable()
+    .optional()
+    .describe(
+      "The same address in parts, used for e-invoices (EN 16931). Not printed on the PDF. Left out on update = kept as is; null clears it.",
+    ),
   companyNumber: z
     .string()
     .nullable()
@@ -241,7 +264,7 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
     {
       title: "Update client",
       description:
-        "Replace a client's details. All fields are overwritten, so pass the full intended state.",
+        "Replace a client's details. All fields are overwritten, so pass the full intended state (except postalAddress, which is kept when left out).",
       inputSchema: { clientId: z.string().uuid(), ...clientFields },
     },
     ({ clientId, ...data }) =>
@@ -271,6 +294,7 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
             contacts,
             notes: existing.notes ?? undefined,
             address: existing.address,
+            postalAddress: existing.postalAddress,
             companyNumber: existing.companyNumber,
             vatNumber: existing.vatNumber,
             defaultRateMinor: existing.defaultRateMinor,

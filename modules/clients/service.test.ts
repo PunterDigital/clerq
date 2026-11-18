@@ -237,3 +237,53 @@ describe("clients service - search", () => {
     expect(withArchived.map((c) => c.name)).toContain("Archivable Anchors");
   });
 });
+
+describe("clients service - structured postal address", () => {
+  it("stores it normalised, keeps it when an update leaves it out, clears it on null", async () => {
+    const created = await createClient(db, businessA.id, userA, {
+      name: "Harbour Partners",
+      contacts: [],
+      address: "12 Harbour Street\nBristol BS1 4QA",
+      postalAddress: {
+        street: " 12 Harbour Street ",
+        city: "Bristol",
+        postcode: "BS1 4QA",
+        region: "",
+        country: "GB",
+      },
+    });
+    expect(created.postalAddress).toEqual({
+      street: "12 Harbour Street",
+      city: "Bristol",
+      postcode: "BS1 4QA",
+      region: null,
+      country: "GB",
+    });
+
+    // An older caller that doesn't know the field keeps the stored value.
+    const renamed = await updateClient(db, businessA.id, userA, created.id, {
+      name: "Harbour Partners Ltd",
+      contacts: [],
+      address: "12 Harbour Street\nBristol BS1 4QA",
+    });
+    expect(renamed?.postalAddress?.city).toBe("Bristol");
+
+    const cleared = await updateClient(db, businessA.id, userA, created.id, {
+      name: "Harbour Partners Ltd",
+      contacts: [],
+      postalAddress: null,
+    });
+    expect(cleared?.postalAddress).toBeNull();
+    // The free-text address is independent of it.
+    expect(cleared?.address).toBeNull();
+  });
+
+  it("defaults to no structured address", async () => {
+    const created = await createClient(db, businessA.id, userA, {
+      name: "Plain Address Co",
+      contacts: [],
+      address: "Somewhere",
+    });
+    expect(created.postalAddress).toBeNull();
+  });
+});
