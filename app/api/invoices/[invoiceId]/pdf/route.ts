@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getInvoice } from "@/modules/billing/lifecycle";
 import { buildInvoicePdfData } from "@/modules/billing/pdf-data";
+import { facturXFor } from "@/modules/einvoice/service";
 import { getEffectiveSession } from "@/server/session";
 import { verifyInvoicePdfToken } from "@/server/mcp/pdf-link";
 import { getActiveMembership } from "@/server/membership";
@@ -99,7 +100,10 @@ export async function GET(
     client: clientRow,
   });
 
-  const pdf = await buildInvoicePdf(data);
+  // Issued e-invoices also carry their Factur-X XML (#5041); drafts never do.
+  const facturX =
+    invoice.status === "draft" ? null : await facturXFor(db, businessId, invoiceId);
+  const pdf = await buildInvoicePdf(data, { facturX });
   const filename = invoice.number
     ? `invoice-${invoice.number}.pdf`
     : "draft-invoice.pdf";

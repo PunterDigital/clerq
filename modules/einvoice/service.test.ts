@@ -12,7 +12,7 @@ import {
 } from "@/modules/billing/invoices";
 import { createClient } from "@/modules/clients/service";
 
-import { exportEinvoice } from "./service";
+import { exportEinvoice, facturXFor } from "./service";
 
 let pglite: PGlite;
 let db: Db;
@@ -102,6 +102,14 @@ describe("exportEinvoice (#5040)", () => {
     expect(result.xml).toContain(
       '<cbc:EndpointID schemeID="9944">NL812345678B01</cbc:EndpointID>',
     );
+
+    // #5041: the same invoice as CII, for the PDF's factur-x.xml.
+    const cii = await facturXFor(db, business.id, invoiceId);
+    expect(cii).toContain("<ram:ID>urn:cen.eu:en16931:2017</ram:ID>");
+    expect(cii).toContain(`<rsm:ExchangedDocument><ram:ID>${number}</ram:ID>`);
+    expect(cii).toContain('<ram:BilledQuantity unitCode="DAY">1</ram:BilledQuantity>');
+    expect(cii).toContain("<ram:CategoryCode>AE</ram:CategoryCode>");
+    expect(cii).toContain('<ram:URIID schemeID="9944">NL812345678B01</ram:URIID>');
   });
 
   it("answers null for another business's invoice and lists the switch-off", async () => {
@@ -124,6 +132,9 @@ describe("exportEinvoice (#5040)", () => {
     expect(off?.ok === false && off.missing).toContain(
       "Turn on e-invoicing in Settings -> E-invoicing",
     );
+    // No Factur-X either: the PDF stays a plain PDF/A-3b.
+    expect(await facturXFor(db, business.id, draft!.id)).toBeNull();
+    expect(await facturXFor(db, other.id, draft!.id)).toBeNull();
     await db
       .update(schema.business)
       .set({ einvoicingEnabled: true })

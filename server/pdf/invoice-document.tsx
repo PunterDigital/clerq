@@ -1,11 +1,18 @@
 // The invoice PDF layout. Colors are the design system's tokens by value
 // (PDFs cannot read CSS variables): teal-500 #228E80 primary, warm
-// neutrals #2A241F/#6E6458 text, #E8E1D8 hairlines. Typeface is the PDF
-// standard Helvetica for now - self-hosted Figtree embedding is part of
-// the design pass.
+// neutrals #2A241F/#6E6458 text, #E8E1D8 hairlines.
+//
+// The PDF is PDF/A-3b (#5041): archivable, and the container Factur-X needs.
+// PDF/A embeds every font, so the text is set in Arimo (SIL OFL 1.1,
+// public/fonts/arimo), which has Helvetica's metrics: the layout is the one
+// the standard Helvetica gave, and it now prints characters outside
+// WinAnsi (Ł, ő, ş) too. Self-hosted Figtree is still for the design pass.
+
+import { join } from "node:path";
 
 import {
   Document,
+  Font,
   Image,
   Page,
   renderToBuffer,
@@ -15,6 +22,20 @@ import {
 } from "@react-pdf/renderer";
 
 import type { InvoicePdfData } from "@/modules/billing/pdf-data";
+
+import { finishPdfA } from "./pdfa";
+
+const FONT_FAMILY = "Arimo";
+// public/ is next to the server in the Docker image and in the E2E
+// standalone build, and at the repo root in dev and tests.
+const FONT_DIR = join(process.cwd(), "public", "fonts", "arimo");
+Font.register({
+  family: FONT_FAMILY,
+  fonts: [
+    { src: join(FONT_DIR, "Arimo-Regular.ttf"), fontWeight: 400 },
+    { src: join(FONT_DIR, "Arimo-Bold.ttf"), fontWeight: 700 },
+  ],
+});
 
 // primary is the default; per-invoice it is overridden inline by the
 // business's chosen brand colour (data.brandColor).
@@ -41,7 +62,7 @@ const space = {
   row: 10,
 };
 
-// Helvetica draws a line box about 1.38x its font size, so anything tighter
+// Helvetica (and Arimo, with the same metrics) draws a line box about 1.38x its font size, so anything tighter
 // than that has consecutive lines overlapping the moment the text wraps.
 // The page's 1.5 is comfortable for body copy; the display sizes (business
 // name, title, balance) use this slightly tighter value, which still leaves
@@ -51,7 +72,7 @@ const displayLineHeight = 1.45;
 const styles = StyleSheet.create({
   page: {
     padding: space.page,
-    fontFamily: "Helvetica",
+    fontFamily: FONT_FAMILY,
     fontSize: 10,
     color: colors.textStrong,
     lineHeight: 1.5,
@@ -71,7 +92,8 @@ const styles = StyleSheet.create({
   headerRight: { flexShrink: 0, maxWidth: "45%", alignItems: "flex-end" },
   businessName: {
     fontSize: 16,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: FONT_FAMILY,
+    fontWeight: 700,
     color: colors.primary,
     lineHeight: displayLineHeight,
     // Clears the descenders of this line from the ascenders of the address
@@ -80,14 +102,16 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 22,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: FONT_FAMILY,
+    fontWeight: 700,
     textAlign: "right",
     lineHeight: displayLineHeight,
   },
   balanceBox: { marginTop: 20, alignItems: "flex-end" },
   balanceCaption: {
     fontSize: 8,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: FONT_FAMILY,
+    fontWeight: 700,
     color: colors.textMuted,
     textTransform: "uppercase",
     letterSpacing: 0.8,
@@ -96,20 +120,23 @@ const styles = StyleSheet.create({
   },
   balanceAmount: {
     fontSize: 18,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: FONT_FAMILY,
+    fontWeight: 700,
     textAlign: "right",
     lineHeight: displayLineHeight,
   },
   paidBadge: {
     fontSize: 10,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: FONT_FAMILY,
+    fontWeight: 700,
     color: colors.primary,
     textAlign: "right",
     marginTop: 2,
   },
   voidBadge: {
     fontSize: 12,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: FONT_FAMILY,
+    fontWeight: 700,
     color: "#B91C1C",
     textAlign: "right",
     letterSpacing: 1,
@@ -127,7 +154,8 @@ const styles = StyleSheet.create({
   },
   voidWatermarkText: {
     fontSize: 150,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: FONT_FAMILY,
+    fontWeight: 700,
     color: "#B91C1C",
     opacity: 0.12,
     letterSpacing: 10,
@@ -140,7 +168,8 @@ const styles = StyleSheet.create({
   metaColumn: { width: "46%" },
   metaCaption: {
     fontSize: 8,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: FONT_FAMILY,
+    fontWeight: 700,
     color: colors.textMuted,
     textTransform: "uppercase",
     letterSpacing: 0.8,
@@ -160,7 +189,8 @@ const styles = StyleSheet.create({
   },
   th: {
     fontSize: 8,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: FONT_FAMILY,
+    fontWeight: 700,
     color: colors.textMuted,
     textTransform: "uppercase",
     letterSpacing: 0.8,
@@ -198,7 +228,8 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     marginTop: 8,
     paddingTop: 10,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: FONT_FAMILY,
+    fontWeight: 700,
     fontSize: 12,
   },
   taxNote: {
@@ -210,7 +241,8 @@ const styles = StyleSheet.create({
   notesBlock: { marginTop: space.section },
   notesCaption: {
     fontSize: 8,
-    fontFamily: "Helvetica-Bold",
+    fontFamily: FONT_FAMILY,
+    fontWeight: 700,
     color: colors.textMuted,
     textTransform: "uppercase",
     letterSpacing: 0.8,
@@ -273,6 +305,7 @@ export function InvoiceDocument({ data }: { data: InvoicePdfData }) {
 
   return (
     <Document
+      conformance="PDF/A-3b"
       title={data.title}
       author={data.businessName}
       creator="Clerq"
@@ -459,6 +492,12 @@ export function InvoiceDocument({ data }: { data: InvoicePdfData }) {
   );
 }
 
-export function buildInvoicePdf(data: InvoicePdfData): Promise<Buffer> {
-  return renderToBuffer(<InvoiceDocument data={data} />);
+// facturX: the invoice's CII XML (modules/einvoice/cii.ts). With it the
+// PDF is also a Factur-X / ZUGFeRD e-invoice; without it, a plain PDF/A-3b.
+export async function buildInvoicePdf(
+  data: InvoicePdfData,
+  options: { facturX?: string | null } = {},
+): Promise<Buffer> {
+  const pdf = await renderToBuffer(<InvoiceDocument data={data} />);
+  return finishPdfA(pdf, { facturX: options.facturX ?? null });
 }

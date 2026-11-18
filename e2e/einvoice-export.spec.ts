@@ -1,6 +1,14 @@
 import { readFileSync } from "node:fs";
 
-import { expect, test } from "@playwright/test";
+import {
+  decodePDFRawStream,
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFName,
+  PDFRawStream,
+} from "@cantoo/pdf-lib";
+import { expect, test, type Page } from "@playwright/test";
 import { Client } from "pg";
 
 import { DEMO_EMAIL, DEMO_STATE } from "./env";
@@ -9,7 +17,8 @@ import { DEMO_EMAIL, DEMO_STATE } from "./env";
 // and one that can't be exported yet says what to add. The business is set
 // up for e-invoicing in the database (a German seller) and put back after;
 // the invoices are inserted already issued, because issuing isn't what this
-// spec is about.
+// spec is about. Card #5041: the same invoice's PDF is a Factur-X
+// PDF/A-3b with factur-x.xml inside; the others are plain PDF/A-3b.
 test.use({ storageState: DEMO_STATE });
 test.describe.configure({ mode: "serial" });
 
@@ -52,6 +61,36 @@ async function issuedInvoice(
     [businessId, inv.rows[0].id],
   );
   return inv.rows[0].id;
+}
+
+// Clicks "Download PDF" and reads the file back: the XMP metadata and the
+// files in the catalog's /AF array (name, relationship, XML).
+async function downloadPdf(page: Page) {
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download PDF" }).click();
+  const download = await downloadPromise;
+  const doc = await PDFDocument.load(readFileSync((await download.path()) as string), {
+    updateMetadata: false,
+  });
+  const text = (ref: unknown) => {
+    const stream = doc.context.lookup(ref as never);
+    if (!(stream instanceof PDFRawStream)) throw new Error("not a stream");
+    return new TextDecoder().decode(decodePDFRawStream(stream).decode());
+  };
+  const af = doc.catalog.lookupMaybe(PDFName.of("AF"), PDFArray);
+  const files = (af?.asArray() ?? []).map((ref) => {
+    const spec = doc.context.lookup(ref, PDFDict);
+    return {
+      name: spec.lookup(PDFName.of("F"))?.toString(),
+      relationship: spec.get(PDFName.of("AFRelationship"))?.toString(),
+      xml: text(spec.lookup(PDFName.of("EF"), PDFDict).get(PDFName.of("F"))),
+    };
+  });
+  return {
+    filename: download.suggestedFilename(),
+    xmp: text(doc.catalog.get(PDFName.of("Metadata"))),
+    files,
+  };
 }
 
 test.beforeAll(async () => {
@@ -143,6 +182,22 @@ test("an issued invoice downloads as a Peppol BIS 3.0 e-invoice", async ({ page 
   expect(xml).toContain('<cbc:PayableAmount currencyID="EUR">326.67</cbc:PayableAmount>');
 });
 
+test("its PDF is a Factur-X invoice with the same data", async ({ page }) => {
+  await page.goto(`/invoices/${readyInvoiceId}`);
+  const pdf = await downloadPdf(page);
+  expect(pdf.filename).toMatch(/^invoice-2099-\d{4}\.pdf$/);
+  expect(pdf.xmp).toContain("<pdfaid:part>3</pdfaid:part>");
+  expect(pdf.xmp).toContain("<fx:ConformanceLevel>EN 16931</fx:ConformanceLevel>");
+  expect(pdf.files).toHaveLength(1);
+  expect(pdf.files[0].name).toBe("(factur-x.xml)");
+  expect(pdf.files[0].relationship).toBe("/Alternative");
+  const xml = pdf.files[0].xml;
+  expect(xml).toContain("<ram:ID>urn:cen.eu:en16931:2017</ram:ID>");
+  expect(xml).toContain("<ram:BuyerReference>PO-7781</ram:BuyerReference>");
+  expect(xml).toContain('<ram:BilledQuantity unitCode="HUR">4.083333</ram:BilledQuantity>');
+  expect(xml).toContain("<ram:DuePayableAmount>326.67</ram:DuePayableAmount>");
+});
+
 test("one that can't be exported lists what to add, and offers no download", async ({ page }) => {
   await page.goto(`/invoices/${missingInvoiceId}`);
   const list = page.getByLabel("Missing for the e-invoice");
@@ -155,6 +210,12 @@ test("one that can't be exported lists what to add, and offers no download", asy
   const res = await page.request.get(`/api/invoices/${missingInvoiceId}/einvoice`);
   expect(res.status()).toBe(422);
   expect(await res.text()).toContain("A buyer reference / PO number on the invoice");
+
+  // Its PDF is still PDF/A-3b, without Factur-X.
+  const pdf = await downloadPdf(page);
+  expect(pdf.xmp).toContain("<pdfaid:part>3</pdfaid:part>");
+  expect(pdf.xmp).not.toContain("fx:");
+  expect(pdf.files).toEqual([]);
 });
 
 test("with e-invoicing off there's neither a button nor a list", async ({ page }) => {
@@ -165,4 +226,5 @@ test("with e-invoicing off there's neither a button nor a list", async ({ page }
   await expect(page.getByRole("link", { name: "Download PDF" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Download e-invoice (XML)" })).toHaveCount(0);
   await expect(page.getByLabel("Missing for the e-invoice")).toHaveCount(0);
+  expect((await downloadPdf(page)).files).toEqual([]);
 });
