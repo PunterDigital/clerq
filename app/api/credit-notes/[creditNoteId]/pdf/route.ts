@@ -3,14 +3,18 @@ import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getCreditNote } from "@/modules/billing/credit-notes";
 import { buildCreditNotePdfData } from "@/modules/billing/pdf-data";
+import {
+  documentFilename,
+  facturXForCreditNote,
+} from "@/modules/einvoice/service";
 import { getActiveMembership } from "@/server/membership";
 import { getEffectiveSession } from "@/server/session";
 import { buildInvoicePdf } from "@/server/pdf/invoice-document";
 
 // GET /api/credit-notes/:creditNoteId/pdf - the "Download PDF" button on a
 // credit note (#5042), for the signed-in user's business. PDF/A-3b like
-// the invoice PDFs; the e-invoice (UBL CreditNote / Factur-X 381) comes
-// with the e-invoice export of credit notes.
+// the invoice PDFs, with Factur-X (type 381) attached when the credit note
+// can be exported as an e-invoice.
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ creditNoteId: string }> },
@@ -80,11 +84,12 @@ export async function GET(
     },
     client: clientRow,
   });
-  const pdf = await buildInvoicePdf(data);
+  const facturX = await facturXForCreditNote(db, businessId, creditNoteId);
+  const pdf = await buildInvoicePdf(data, { facturX });
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="credit-note-${creditNote.number}.pdf"`,
+      "Content-Disposition": `attachment; filename="${documentFilename("credit-note", creditNote.number, "pdf")}"`,
     },
   });
 }

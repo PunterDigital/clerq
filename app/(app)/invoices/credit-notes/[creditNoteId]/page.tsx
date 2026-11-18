@@ -32,7 +32,14 @@ export default async function CreditNotePage({
     }
     throw error;
   }
-  const client = await caller.clients.get({ clientId: note.clientId });
+  const [client, business] = await Promise.all([
+    caller.clients.get({ clientId: note.clientId }),
+    caller.business.current(),
+  ]);
+  // With e-invoicing on: the UBL CreditNote download, or what's missing.
+  const einvoice = business?.einvoicingEnabled
+    ? await caller.invoices.creditNoteEinvoice({ creditNoteId: note.id })
+    : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -63,12 +70,38 @@ export default async function CreditNotePage({
             <p className="text-sm text-muted-foreground">Reason: {note.reason}</p>
           ) : null}
         </div>
-        <Button variant="outline" asChild>
-          <a href={`/api/credit-notes/${note.id}/pdf`} download>
-            Download PDF
-          </a>
-        </Button>
+        <div className="flex items-start gap-2">
+          <Button variant="outline" asChild>
+            <a href={`/api/credit-notes/${note.id}/pdf`} download>
+              Download PDF
+            </a>
+          </Button>
+          {einvoice?.ok ? (
+            <Button variant="outline" asChild>
+              <a href={`/api/credit-notes/${note.id}/einvoice`} download>
+                Download e-invoice (XML)
+              </a>
+            </Button>
+          ) : null}
+        </div>
       </div>
+      {einvoice && !einvoice.ok ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>E-invoice</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 text-sm">
+            <p className="text-muted-foreground">
+              To download this credit note as an e-invoice (XML), add:
+            </p>
+            <ul className="list-disc pl-5" aria-label="Missing for the e-invoice">
+              {einvoice.missing.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card>

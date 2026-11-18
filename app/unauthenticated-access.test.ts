@@ -101,6 +101,15 @@ describe("file-download routes refuse anonymous requests", () => {
     expect(await res.text()).toBe("Sign in first");
   });
 
+  it("serves no credit note e-invoice without a session", async () => {
+    const { GET } = await import("@/app/api/credit-notes/[creditNoteId]/einvoice/route");
+    const res = await GET(
+      new Request("http://localhost/api/credit-notes/cn-1/einvoice"),
+      { params: Promise.resolve({ creditNoteId: "cn-1" }) },
+    );
+    expect(res.status).toBe(401);
+  });
+
   it("serves no credit note PDF without a session", async () => {
     const { GET } = await import("@/app/api/credit-notes/[creditNoteId]/pdf/route");
     const res = await GET(
@@ -287,6 +296,7 @@ const PROTECTED_ROUTES = [
   "api/invoices/[invoiceId]/pdf/route.ts",
   "api/invoices/[invoiceId]/einvoice/route.ts",
   "api/credit-notes/[creditNoteId]/pdf/route.ts",
+  "api/credit-notes/[creditNoteId]/einvoice/route.ts",
   "api/expenses/receipts/route.ts",
   "api/export/route.ts",
   "api/mcp/route.ts",

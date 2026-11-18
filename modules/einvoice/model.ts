@@ -53,6 +53,10 @@ export type EinvoiceSource = {
     vatNumber: string | null;
     companyNumber: string | null;
   };
+  // Set when the document is a credit note (#5042, type 381): the invoice
+  // it corrects (BG-3). The "invoice" above then holds the credit note's
+  // own number, date, lines and totals.
+  creditNote?: { invoiceNumber: string; invoiceIssueDate: Date | null } | null;
 };
 
 export type EinvoiceContact = {
@@ -80,6 +84,10 @@ export type EinvoiceParty = {
 };
 
 export type EinvoiceModel = {
+  // UNCL1001: 380 commercial invoice, 381 credit note.
+  typeCode: "380" | "381";
+  // BG-3, on credit notes: the invoice being credited.
+  precedingInvoice: { number: string; issueDate: string | null } | null;
   number: string;
   issueDate: string; // yyyy-mm-dd
   dueDate: string | null;
@@ -233,7 +241,8 @@ function nationalRules(
   const seller = business.postalAddress;
   const buyer = client.postalAddress;
   if (sellerCountry === "DE" && buyerCountry === "DE") {
-    // DE-R-001, DE-R-002/005/006/007, DE-R-003/004, DE-R-008/009.
+    // DE-R-001, DE-R-002/005/006/007, DE-R-003/004, DE-R-008/009. DE-R-001
+    // holds for credit notes too (Peppol BIS 3.0.22 fails one without BG-16).
     if (!business.iban) {
       out.push("Your IBAN (Settings -> E-invoicing): German invoices to German buyers need payment instructions");
     }
@@ -377,12 +386,20 @@ export function buildEinvoiceModel(source: EinvoiceSource): EinvoiceResult {
     contact,
   });
 
+  const credit = source.creditNote ?? null;
   return {
     ok: true,
     model: {
+      typeCode: credit ? "381" : "380",
+      precedingInvoice: credit
+        ? {
+            number: credit.invoiceNumber,
+            issueDate: credit.invoiceIssueDate ? isoDate(credit.invoiceIssueDate) : null,
+          }
+        : null,
       number: invoice.number as string,
       issueDate: isoDate(invoice.issueDate as Date),
-      dueDate: invoice.dueDate ? isoDate(invoice.dueDate) : null,
+      dueDate: !credit && invoice.dueDate ? isoDate(invoice.dueDate) : null,
       currency: invoice.currency,
       digits,
       note: invoice.notes?.trim() || null,
@@ -407,6 +424,7 @@ export function buildEinvoiceModel(source: EinvoiceSource): EinvoiceResult {
         client.companyNumber?.trim() || null,
         null,
       ),
+      // Credit notes keep the payment means: Peppol's DE-R-001 asks for them.
       payment: business.iban ? { iban: business.iban, bic: business.bic } : null,
       vat: {
         category,

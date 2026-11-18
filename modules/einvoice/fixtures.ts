@@ -207,4 +207,40 @@ export const EINVOICE_FIXTURES: { name: string; source: EinvoiceSource }[] = [
       },
     },
   },
+  {
+    // A credit note (#5042, type 381) for the setup fee of 2026-0001: its
+    // own number, a reference to the invoice (BG-3) and no due date.
+    name: "credit-note",
+    source: {
+      business: seller,
+      client: germanBuyer,
+      creditNote: {
+        invoiceNumber: "2026-0001",
+        invoiceIssueDate: new Date("2026-06-11T00:00:00Z"),
+      },
+      invoice: {
+        ...issued,
+        number: "CN-2026-0001",
+        issueDate: new Date("2026-06-20T00:00:00Z"),
+        dueDate: null,
+        currency: "EUR",
+        taxTreatment: "standard",
+        taxRatePercent: "19",
+        taxNote: null,
+        subtotalMinor: 25000,
+        taxMinor: 4750,
+        totalMinor: 29750,
+        notes: "Reason: Setup fee waived",
+        lines: [
+          {
+            description: "Setup fee",
+            quantity: null,
+            unitPriceMinor: null,
+            totalMinor: 25000,
+            unitCode: "C62",
+          },
+        ],
+      },
+    },
+  },
 ];

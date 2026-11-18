@@ -993,7 +993,7 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
     {
       title: "Void invoice",
       description:
-        "Void a sent or overdue invoice (e.g. to re-issue a corrected copy). The invoice keeps its number but no longer counts as revenue, and any time billed on it returns to the unbilled pool so it can be billed again. Only sent/overdue invoices can be voided; paid is locked and drafts are edited. Optionally record a reason.",
+        "Void a sent or overdue invoice (e.g. to re-issue a corrected copy). The invoice keeps its number but no longer counts as revenue, and any time billed on it returns to the unbilled pool so it can be billed again. Only sent/overdue invoices can be voided; paid is locked and drafts are edited. Once an invoice went out as an e-invoice or has a credit note it can't be voided: use issue_credit_note instead. Optionally record a reason.",
       inputSchema: {
         invoiceId: z.string().uuid(),
         reason: z
@@ -1006,6 +1006,72 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
     ({ invoiceId, reason }) =>
       runTool(async () =>
         toolJson(await caller.invoices.void({ invoiceId, reason })),
+      ),
+  );
+
+  // --- Credit notes (#5042) ----------------------------------------------
+  server.registerTool(
+    "issue_credit_note",
+    {
+      title: "Issue credit note",
+      description:
+        "Issue a credit note against a sent, overdue or paid invoice: the way to correct an issued invoice. It gets its own number (e.g. CN-2026-0001) and counts as negative revenue. Leave lines out to credit everything left on the invoice; or pass lines (invoiceLineId from get_invoice, amountMajor as a decimal string in the invoice's currency) to credit part of it. VAT follows the invoice. When credit notes cover a sent or overdue invoice in full, it becomes 'credited' and its billed time returns to unbilled.",
+      inputSchema: {
+        invoiceId: z.string().uuid(),
+        lines: z
+          .array(
+            z.object({
+              invoiceLineId: z.string().uuid(),
+              amountMajor: z.string().describe('Amount to credit on this line, e.g. "40.00".'),
+            }),
+          )
+          .optional(),
+        reason: z.string().max(500).optional().describe("Printed on the credit note."),
+      },
+    },
+    ({ invoiceId, lines, reason }) =>
+      runTool(async () =>
+        toolJson(await caller.invoices.issueCreditNote({ invoiceId, lines, reason })),
+      ),
+  );
+
+  server.registerTool(
+    "list_credit_notes",
+    {
+      title: "List credit notes",
+      description:
+        "List the business's credit notes, newest first, with the client name and the credited invoice's number. Optionally only those of one invoice.",
+      inputSchema: { invoiceId: z.string().uuid().optional() },
+    },
+    ({ invoiceId }) =>
+      runTool(async () => {
+        const notes = await caller.invoices.creditNotes();
+        return toolJson(invoiceId ? notes.filter((n) => n.invoiceId === invoiceId) : notes);
+      }),
+  );
+
+  server.registerTool(
+    "get_credit_note",
+    {
+      title: "Get credit note",
+      description: "One credit note with its lines, totals, reason and the credited invoice.",
+      inputSchema: { creditNoteId: z.string().uuid() },
+    },
+    ({ creditNoteId }) =>
+      runTool(async () => toolJson(await caller.invoices.creditNote({ creditNoteId }))),
+  );
+
+  server.registerTool(
+    "get_credit_note_einvoice",
+    {
+      title: "Get credit note as an e-invoice (XML)",
+      description:
+        "Return a credit note as a UBL 2.1 CreditNote in the Peppol BIS Billing 3.0 format (EN 16931), referencing the credited invoice, as XML text with a suggested filename. Needs e-invoicing on in the business settings. If something is missing, returns the list of what to fill in instead.",
+      inputSchema: { creditNoteId: z.string().uuid() },
+    },
+    ({ creditNoteId }) =>
+      runTool(async () =>
+        toolJson(await caller.invoices.creditNoteEinvoice({ creditNoteId })),
       ),
   );
 

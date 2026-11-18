@@ -176,6 +176,8 @@ A change the status doesn't allow is a 409.
 | `GET /invoices/{id}/pdf-link` | `{ "url", "invoiceNumber", "expiresInSeconds" }`: a link that downloads the PDF without a key or login, for 15 minutes. The PDF is PDF/A-3b; with e-invoicing on, an issued invoice that the e-invoice export accepts is also a Factur-X / ZUGFeRD invoice (EN 16931 profile, `factur-x.xml` inside) |
 | `GET /invoices/{id}/einvoice` | The issued invoice as a Peppol BIS Billing 3.0 UBL e-invoice (`application/xml`). Needs e-invoicing on in Settings; 422 lists what to fill in first. Once downloaded, the invoice counts as sent as an e-invoice and can no longer be voided |
 
+| `POST /invoices/{id}/credit-notes` | Issue a credit note against a sent, overdue or paid invoice. No body credits everything left; `{ "lines": [{ "invoiceLineId", "amountMajor" }], "reason"? }` credits part. VAT follows the invoice. 409 for a draft, a void invoice or nothing left; 422 for more than a line has left |
+
 Line amounts are sent as `amountMajor`, a plain decimal string in the
 invoice's currency (`"1500"` or `"1500.00"`), and come back in minor units
 (`totalMinor`). An amount with more decimals than the currency allows is a 422.
@@ -192,6 +194,20 @@ curl -X POST https://app.useclerq.net/api/v1/invoices/.../lines \
   -H "Authorization: Bearer clq_..." -H "Content-Type: application/json" \
   -d '{"description": "Design work, October", "amountMajor": "1500.00"}'
 ```
+
+## Credit notes
+
+A credit note corrects an issued invoice: it has its own number (the
+business's prefix, `CN-` by default, then `YYYY-NNNN`), credits some or all
+of the invoice's lines, and counts as negative revenue on its issue date.
+Amounts are positive, like the document prints them. Issue one with
+`POST /invoices/{id}/credit-notes`.
+
+| Method and path | What it does |
+| --- | --- |
+| `GET /credit-notes` | List credit notes, newest first, with `clientName` and `invoiceNumber`. `?invoiceId=`, `?clientId=` |
+| `GET /credit-notes/{id}` | One credit note with its `lines`, `invoiceNumber` and `invoiceIssueDate` |
+| `GET /credit-notes/{id}/einvoice` | The credit note as a Peppol BIS Billing 3.0 UBL `CreditNote` (`application/xml`, type 381, referencing the invoice). Needs e-invoicing on; 422 lists what to fill in first |
 
 ## Recurring invoices
 

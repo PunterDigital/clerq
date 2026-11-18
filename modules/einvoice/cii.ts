@@ -161,7 +161,7 @@ export function buildCiiInvoice(model: EinvoiceModel): string {
     "</ram:GuidelineSpecifiedDocumentContextParameter></rsm:ExchangedDocumentContext>" +
     "<rsm:ExchangedDocument>" +
     el("ram:ID", model.number) +
-    el("ram:TypeCode", "380") +
+    el("ram:TypeCode", model.typeCode) +
     date("ram:IssueDateTime", model.issueDate) +
     (model.note ? `<ram:IncludedNote>${el("ram:Content", model.note)}</ram:IncludedNote>` : "") +
     "</rsm:ExchangedDocument>" +
@@ -195,6 +195,15 @@ export function buildCiiInvoice(model: EinvoiceModel): string {
     amount("ram:GrandTotalAmount", t.taxInclusiveMinor, model) +
     amount("ram:DuePayableAmount", t.payableMinor, model) +
     "</ram:SpecifiedTradeSettlementHeaderMonetarySummation>" +
+    // BG-3 on a credit note (#5042): the invoice it corrects.
+    (model.precedingInvoice
+      ? "<ram:InvoiceReferencedDocument>" +
+        el("ram:IssuerAssignedID", model.precedingInvoice.number) +
+        (model.precedingInvoice.issueDate
+          ? `<ram:FormattedIssueDateTime><qdt:DateTimeString format="102">${model.precedingInvoice.issueDate.replace(/-/g, "")}</qdt:DateTimeString></ram:FormattedIssueDateTime>`
+          : "") +
+        "</ram:InvoiceReferencedDocument>"
+      : "") +
     "</ram:ApplicableHeaderTradeSettlement>" +
     "</rsm:SupplyChainTradeTransaction>" +
     "</rsm:CrossIndustryInvoice>\n"
