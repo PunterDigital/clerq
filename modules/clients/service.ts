@@ -7,6 +7,10 @@ import {
   normalizePostalAddress,
   postalAddressSchema,
 } from "@/lib/postal-address";
+import {
+  buyerReferenceSchema,
+  normalizeBuyerReference,
+} from "@/lib/einvoice-codes";
 import { likeContains } from "@/lib/search";
 
 // Every function takes the caller's businessId and applies it to every
@@ -42,6 +46,9 @@ export const clientInputSchema = z.object({
   // The same address in parts, for e-invoices. Left out on update = keep the
   // stored one (older callers don't know the field); null clears it.
   postalAddress: postalAddressSchema.nullable().optional(),
+  // Default buyer reference / PO number, copied onto each new invoice.
+  // Left out on update = keep; null or "" clears it.
+  buyerReference: buyerReferenceSchema.optional(),
   // Company / registration number (Companies House, IČO, etc.).
   companyNumber: z.string().trim().max(50).nullable().optional(),
   // Stored verbatim; validated only for shape. Required at issue time for
@@ -133,6 +140,7 @@ export async function createClient(
         notes: input.notes ?? null,
         address: input.address || null,
         postalAddress: normalizePostalAddress(input.postalAddress) ?? null,
+        buyerReference: normalizeBuyerReference(input.buyerReference),
         companyNumber: input.companyNumber || null,
         vatNumber: input.vatNumber || null,
         defaultRateMinor: input.defaultRateMinor ?? null,
@@ -171,6 +179,9 @@ export async function updateClient(
         // Only touched when the caller sent it (undefined = keep).
         ...(input.postalAddress !== undefined
           ? { postalAddress: normalizePostalAddress(input.postalAddress) }
+          : {}),
+        ...(input.buyerReference !== undefined
+          ? { buyerReference: normalizeBuyerReference(input.buyerReference) }
           : {}),
         companyNumber: input.companyNumber || null,
         vatNumber: input.vatNumber || null,

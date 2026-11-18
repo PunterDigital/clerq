@@ -8,6 +8,7 @@ import {
   postalAddressSchema,
 } from "@/lib/postal-address";
 import { EINVOICING_EEA_ONLY_MESSAGE, isEeaCountry } from "@/lib/eea";
+import { bicSchema, ibanSchema } from "@/lib/einvoice-codes";
 import { getUserBusinesses, setActiveBusiness } from "@/server/membership";
 import {
   authedProcedure,
@@ -125,6 +126,8 @@ export const businessRouter = createTRPCRouter({
         address: schema.business.address,
         postalAddress: schema.business.postalAddress,
         einvoicingEnabled: schema.business.einvoicingEnabled,
+        iban: schema.business.iban,
+        bic: schema.business.bic,
         currency: schema.business.currency,
         hoursPerDay: schema.business.hoursPerDay,
         taxConfig: schema.business.taxConfig,
@@ -142,6 +145,8 @@ export const businessRouter = createTRPCRouter({
       address: row.address,
       postalAddress: row.postalAddress ?? null,
       einvoicingEnabled: row.einvoicingEnabled,
+      iban: row.iban,
+      bic: row.bic,
       currency: row.currency,
       hoursPerDay: row.hoursPerDay,
       standardRatePct: taxConfig.standardRatePct ?? null,
@@ -226,6 +231,10 @@ export const businessRouter = createTRPCRouter({
         enabled: z.boolean(),
         // Left out = keep; ignored while turning it off.
         postalAddress: postalAddressSchema.optional(),
+        // Bank details for payment instructions (#5039). Left out = keep,
+        // null or "" clears; ignored while turning it off.
+        iban: ibanSchema.optional(),
+        bic: bicSchema.optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -238,6 +247,8 @@ export const businessRouter = createTRPCRouter({
           .returning({
             einvoicingEnabled: schema.business.einvoicingEnabled,
             postalAddress: schema.business.postalAddress,
+            iban: schema.business.iban,
+            bic: schema.business.bic,
           });
         return updated;
       }
@@ -257,11 +268,19 @@ export const businessRouter = createTRPCRouter({
       }
       const [updated] = await db
         .update(schema.business)
-        .set({ einvoicingEnabled: true, postalAddress, updatedAt: new Date() })
+        .set({
+          einvoicingEnabled: true,
+          postalAddress,
+          ...(input.iban !== undefined ? { iban: input.iban } : {}),
+          ...(input.bic !== undefined ? { bic: input.bic } : {}),
+          updatedAt: new Date(),
+        })
         .where(eq(schema.business.id, ctx.businessId))
         .returning({
           einvoicingEnabled: schema.business.einvoicingEnabled,
           postalAddress: schema.business.postalAddress,
+          iban: schema.business.iban,
+          bic: schema.business.bic,
         });
       return updated;
     }),

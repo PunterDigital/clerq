@@ -44,6 +44,23 @@ const client = {
 };
 
 describe("invoice PDF view model", () => {
+  it("prints the buyer reference and bank details only when set (#5039)", () => {
+    const plain = buildInvoicePdfData({ invoice: baseInvoice, business, client });
+    expect(plain.buyerReference).toBeNull();
+    expect(plain.paymentLines).toEqual([]);
+
+    const data = buildInvoicePdfData({
+      invoice: { ...baseInvoice, buyerReference: "PO-7781" },
+      business: { ...business, iban: "DE89370400440532013000", bic: "COBADEFFXXX" },
+      client,
+    });
+    expect(data.buyerReference).toBe("PO-7781");
+    expect(data.paymentLines).toEqual([
+      "IBAN DE89 3704 0044 0532 0130 00",
+      "BIC COBADEFFXXX",
+    ]);
+  });
+
   it("labels an issued standard-rate invoice with both VAT numbers", () => {
     const data = buildInvoicePdfData({ invoice: baseInvoice, business, client });
     expect(data.title).toBe("Invoice 2026-0100");

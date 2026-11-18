@@ -398,6 +398,12 @@ async function materialiseOccurrence(
   const dueDate = new Date(
     occurrenceDate.getTime() + schedule.netTermsDays * MS_PER_DAY,
   );
+  // Each retainer invoice starts with the client's default buyer reference,
+  // like a hand-made draft.
+  const [clientRow] = await db
+    .select({ buyerReference: schema.client.buyerReference })
+    .from(schema.client)
+    .where(eq(schema.client.id, schedule.clientId));
   const [inv] = await db
     .insert(schema.invoice)
     .values({
@@ -409,6 +415,7 @@ async function materialiseOccurrence(
       taxTreatment: schedule.taxTreatment,
       taxRatePercent: totals.taxRatePercent,
       taxNote: totals.taxNote,
+      buyerReference: clientRow?.buyerReference ?? null,
       issueDate: occurrenceDate,
       dueDate,
       periodStart: occurrenceDate,

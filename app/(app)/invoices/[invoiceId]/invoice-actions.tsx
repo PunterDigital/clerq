@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { UNIT_CODES, type UnitCode } from "@/lib/einvoice-codes";
 import { useTRPC } from "@/server/trpc/client";
 
 export function InvoiceActions({
@@ -286,18 +287,25 @@ export function EditLineButton({
   description: initialDescription,
   amount: initialAmount,
   hasBreakdown,
+  unitCode: initialUnitCode,
 }: {
   lineId: string;
   currency: string;
   description: string;
   amount: string;
   hasBreakdown: boolean;
+  // Set while e-invoicing is on (#5039): shows the UN/ECE unit picker.
+  unitCode?: string;
 }) {
   const router = useRouter();
   const trpc = useTRPC();
   const [open, setOpen] = useState(false);
   const [description, setDescription] = useState(initialDescription);
   const [amount, setAmount] = useState(initialAmount);
+  const [unitCode, setUnitCode] = useState(initialUnitCode ?? "");
+  // Only an explicit pick is sent: otherwise a changed amount turns the line
+  // into a fixed amount (C62) on the server, like it drops the breakdown.
+  const [unitTouched, setUnitTouched] = useState(false);
   const save = useMutation(
     trpc.invoices.updateLine.mutationOptions({
       onSuccess: () => {
@@ -318,6 +326,8 @@ export function EditLineButton({
           // carries into the next one.
           setDescription(initialDescription);
           setAmount(initialAmount);
+          setUnitCode(initialUnitCode ?? "");
+          setUnitTouched(false);
           save.reset();
         }
       }}
@@ -340,6 +350,9 @@ export function EditLineButton({
               lineId,
               description: description.trim(),
               amountMajor: amount.trim(),
+              ...(unitTouched && unitCode
+                ? { unitCode: unitCode as UnitCode }
+                : {}),
             });
           }}
           className="flex flex-col gap-4"
@@ -380,6 +393,29 @@ export function EditLineButton({
               onChange={(e) => setAmount(e.target.value)}
             />
           </div>
+          {initialUnitCode !== undefined ? (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={`edit-line-unit-${lineId}`}>Unit</Label>
+              <select
+                id={`edit-line-unit-${lineId}`}
+                value={unitCode}
+                onChange={(e) => {
+                  setUnitCode(e.target.value);
+                  setUnitTouched(true);
+                }}
+                className="h-9 rounded-md border bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40"
+              >
+                {UNIT_CODES.map((u) => (
+                  <option key={u.code} value={u.code}>
+                    {u.label} ({u.code})
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                The UN/ECE unit code sent in e-invoices.
+              </p>
+            </div>
+          ) : null}
           {save.error ? (
             <p role="alert" className="text-sm text-destructive">
               {save.error.message}

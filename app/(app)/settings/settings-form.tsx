@@ -11,6 +11,7 @@ import {
   postalAddressFromDraft,
 } from "@/components/postal-address-fields";
 import type { CurrencyOption } from "@/lib/currencies";
+import { formatIban, isValidBic, isValidIban } from "@/lib/einvoice-codes";
 import type { CountryOption, PostalAddress } from "@/lib/postal-address";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +36,8 @@ export function SettingsForm({
     address: string | null;
     postalAddress: PostalAddress | null;
     einvoicingEnabled: boolean;
+    iban: string | null;
+    bic: string | null;
     currency: string;
     hoursPerDay: number;
     standardRatePct: string | null;
@@ -53,6 +56,9 @@ export function SettingsForm({
   );
   const [postalError, setPostalError] = useState<string | null>(null);
   const [einvoicing, setEinvoicing] = useState(initial.einvoicingEnabled);
+  const [iban, setIban] = useState(initial.iban ? formatIban(initial.iban) : "");
+  const [bic, setBic] = useState(initial.bic ?? "");
+  const [bankError, setBankError] = useState<string | null>(null);
   const [currency, setCurrency] = useState(initial.currency);
   const [hoursPerDay, setHoursPerDay] = useState(String(initial.hoursPerDay));
   const [standardRatePct, setStandardRatePct] = useState(
@@ -208,8 +214,9 @@ export function SettingsForm({
           <CardDescription>
             Optional, for businesses established in the EEA (EU, Iceland,
             Liechtenstein, Norway). Adds the structured address and other
-            fields electronic invoices (EN 16931) need. Your invoice PDFs
-            don&apos;t change
+            fields electronic invoices (EN 16931) need. Invoice PDFs also
+            show your bank details and the client&apos;s PO number once you
+            add them
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -217,6 +224,7 @@ export function SettingsForm({
             onSubmit={(event) => {
               event.preventDefault();
               setPostalError(null);
+              setBankError(null);
               if (!einvoicing) {
                 updateEinvoicing.mutate({ enabled: false });
                 return;
@@ -232,9 +240,21 @@ export function SettingsForm({
                 );
                 return;
               }
+              if (iban.trim() && !isValidIban(iban)) {
+                setBankError("That IBAN doesn't look right - check the number");
+                return;
+              }
+              if (bic.trim() && !isValidBic(bic)) {
+                setBankError(
+                  "A BIC is 8 or 11 letters and digits, like DEUTDEFF",
+                );
+                return;
+              }
               updateEinvoicing.mutate({
                 enabled: true,
                 postalAddress: postalAddress.value,
+                iban: iban.trim() || null,
+                bic: bic.trim() || null,
               });
             }}
             className="flex flex-col gap-4"
@@ -256,6 +276,44 @@ export function SettingsForm({
                 countryOptions={countryOptions}
                 error={postalError}
               />
+            ) : null}
+            {einvoicing ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-sm font-medium">
+                  Bank details (optional)
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Printed under payment details on your invoices, and sent as
+                  the credit-transfer account in e-invoices.
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex flex-1 flex-col gap-2">
+                    <Label htmlFor="iban">IBAN</Label>
+                    <Input
+                      id="iban"
+                      value={iban}
+                      onChange={(e) => setIban(e.target.value)}
+                      placeholder="DE89 3704 0044 0532 0130 00"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2 sm:w-48">
+                    <Label htmlFor="bic">BIC</Label>
+                    <Input
+                      id="bic"
+                      value={bic}
+                      onChange={(e) => setBic(e.target.value)}
+                      placeholder="COBADEFFXXX"
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+                {bankError ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {bankError}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
             {updateEinvoicing.error ? (
               <p role="alert" className="text-sm text-destructive">

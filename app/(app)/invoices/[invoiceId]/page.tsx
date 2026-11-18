@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import { InvoiceStatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { UNIT_CODES } from "@/lib/einvoice-codes";
 import { formatDate, formatMoney } from "@/lib/format";
 import { minorToMajor } from "@/modules/billing/currency";
 import { caller } from "@/server/trpc/server";
@@ -41,10 +42,12 @@ export default async function InvoiceDetailPage({
     }
     throw error;
   }
-  const [client, projects] = await Promise.all([
+  const [client, projects, business] = await Promise.all([
     caller.clients.get({ clientId: invoice.clientId }),
     caller.projects.list({ clientId: invoice.clientId }),
+    caller.business.current(),
   ]);
+  const einvoicingEnabled = business?.einvoicingEnabled ?? false;
   const isDraft = invoice.status === "draft";
 
   return (
@@ -70,6 +73,9 @@ export default async function InvoiceDetailPage({
             {invoice.dueDate ? ` - due ${formatDate(invoice.dueDate)}` : null}
             {invoice.periodStart && invoice.periodEnd
               ? ` - period ${formatDate(invoice.periodStart)} to ${formatDate(invoice.periodEnd)}`
+              : null}
+            {invoice.buyerReference
+              ? ` - PO ${invoice.buyerReference}`
               : null}
           </p>
           {invoice.status === "void" ? (
@@ -129,6 +135,14 @@ export default async function InvoiceDetailPage({
                             ? `${formatMoney(line.unitPriceMinor, invoice.currency)}/h`
                             : null}
                         </p>
+                        {einvoicingEnabled ? (
+                          <p className="text-xs text-muted-foreground">
+                            Unit:{" "}
+                            {UNIT_CODES.find((u) => u.code === line.unitCode)
+                              ?.label ?? line.unitCode}{" "}
+                            ({line.unitCode})
+                          </p>
+                        ) : null}
                         {line.sourceCurrency &&
                         line.sourceTotalMinor != null &&
                         line.fxRate ? (
@@ -154,6 +168,9 @@ export default async function InvoiceDetailPage({
                               invoice.currency,
                             )}
                             hasBreakdown={line.quantity != null}
+                            unitCode={
+                              einvoicingEnabled ? line.unitCode : undefined
+                            }
                           />
                           <RemoveLineButton lineId={line.id} />
                         </div>
@@ -173,6 +190,15 @@ export default async function InvoiceDetailPage({
                 dueDate={invoice.dueDate}
                 periodStart={invoice.periodStart}
                 periodEnd={invoice.periodEnd}
+                einvoicing={
+                  einvoicingEnabled
+                    ? {
+                        buyerReference: invoice.buyerReference,
+                        vatexCode: invoice.vatexCode,
+                        taxTreatment: invoice.taxTreatment,
+                      }
+                    : null
+                }
               />
               <AddLineForm invoiceId={invoice.id} currency={invoice.currency} />
               <GeneratePanel

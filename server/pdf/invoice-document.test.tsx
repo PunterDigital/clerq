@@ -134,6 +134,9 @@ function invoice(overrides: {
   notes?: string | null;
   footerNote?: string | null;
   lineDescription?: string;
+  buyerReference?: string | null;
+  iban?: string | null;
+  bic?: string | null;
 }) {
   return buildInvoicePdfData({
     invoice: {
@@ -152,6 +155,7 @@ function invoice(overrides: {
       taxMinor: 0,
       totalMinor: 406287,
       notes: overrides.notes ?? null,
+      buyerReference: overrides.buyerReference ?? null,
       lines: [
         {
           description:
@@ -172,6 +176,8 @@ function invoice(overrides: {
       address: "12 Harbour Street\nBristol BS1 4QA",
       vatNumber: "GB123456789",
       footerNote: overrides.footerNote ?? null,
+      iban: overrides.iban ?? null,
+      bic: overrides.bic ?? null,
     },
     client: {
       name: "Lumen Labs Ltd",
@@ -245,6 +251,32 @@ describe("invoice PDF rendering", () => {
     // A real one-page invoice with embedded structure is comfortably
     // larger than a trivial empty document.
     expect(pdf.length).toBeGreaterThan(2000);
+  });
+});
+
+describe("invoice PDF e-invoicing fields (#5039)", () => {
+  it("prints the buyer reference and payment details when set, and nothing when not", async () => {
+    const texts = async (pdf: Buffer) =>
+      (await textBoxes(pdf)).flat().map((box) => box.text);
+
+    const plain = await texts(await buildInvoicePdf(invoice({})));
+    expect(plain.some((t) => /payment details/i.test(t))).toBe(false);
+    expect(plain.some((t) => /your reference/i.test(t))).toBe(false);
+
+    const full = await texts(
+      await buildInvoicePdf(
+        invoice({
+          buyerReference: "PO-7781",
+          iban: "DE89370400440532013000",
+          bic: "COBADEFFXXX",
+        }),
+      ),
+    );
+    expect(full.some((t) => /your reference/i.test(t))).toBe(true);
+    expect(full).toContain("PO-7781");
+    expect(full.some((t) => /payment details/i.test(t))).toBe(true);
+    expect(full).toContain("IBAN DE89 3704 0044 0532 0130 00");
+    expect(full).toContain("BIC COBADEFFXXX");
   });
 });
 

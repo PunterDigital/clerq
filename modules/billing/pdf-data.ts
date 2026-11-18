@@ -2,6 +2,7 @@
 // built here so it is unit-testable without rendering. The PDF layer
 // only lays out what this produces.
 
+import { formatIban } from "@/lib/einvoice-codes";
 import { formatDateFull, formatMoney, formatMoneyCode } from "@/lib/format";
 
 // Postal addresses are stored verbatim, newline-separated; the PDF lays
@@ -26,6 +27,7 @@ type InvoiceRecord = {
   taxTreatment: "standard" | "zero_rated" | "reverse_charge";
   taxRatePercent: string;
   taxNote: string | null;
+  buyerReference?: string | null;
   subtotalMinor: number;
   taxMinor: number;
   totalMinor: number;
@@ -64,6 +66,8 @@ export type InvoicePdfData = {
   issueDateLabel: string | null;
   dueDateLabel: string | null;
   periodLabel: string | null;
+  // The client's PO number / buyer reference, when the invoice has one.
+  buyerReference: string | null;
   lines: {
     description: string;
     quantityLabel: string | null;
@@ -79,6 +83,9 @@ export type InvoicePdfData = {
   balanceDueLabel: string;
   taxNote: string | null;
   notes: string | null;
+  // "IBAN DE89 3704 ..." / "BIC COBADEFFXXX" rows under Payment details;
+  // empty when the business has no bank details set.
+  paymentLines: string[];
 };
 
 export function buildInvoicePdfData(input: {
@@ -90,6 +97,8 @@ export function buildInvoicePdfData(input: {
     brandColor?: string | null;
     logoDataUrl?: string | null;
     footerNote?: string | null;
+    iban?: string | null;
+    bic?: string | null;
   };
   client: {
     name: string;
@@ -128,6 +137,7 @@ export function buildInvoicePdfData(input: {
             invoice.periodEnd,
           )}`
         : null,
+    buyerReference: invoice.buyerReference || null,
     lines: invoice.lines.map((line) => ({
       description: line.description,
       quantityLabel:
@@ -156,5 +166,9 @@ export function buildInvoicePdfData(input: {
     balanceDueLabel: formatMoneyCode(invoice.totalMinor, invoice.currency),
     taxNote: invoice.taxNote,
     notes: invoice.notes,
+    paymentLines: [
+      ...(business.iban ? [`IBAN ${formatIban(business.iban)}`] : []),
+      ...(business.bic ? [`BIC ${business.bic}`] : []),
+    ],
   };
 }

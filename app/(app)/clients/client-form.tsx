@@ -33,6 +33,7 @@ export type ClientFormValues = {
   postalAddress?: PostalAddress | PostalAddressInput | null;
   companyNumber?: string | null;
   vatNumber?: string | null;
+  buyerReference?: string | null;
   defaultRateMinor?: number | null;
   defaultRateCurrency?: string | null;
   defaultRateUnit?: RateUnit;
@@ -79,6 +80,9 @@ export function ClientForm({
   );
   const [rateError, setRateError] = useState<string | null>(null);
   const [vatNumber, setVatNumber] = useState(initial?.vatNumber ?? "");
+  const [buyerReference, setBuyerReference] = useState(
+    initial?.buyerReference ?? "",
+  );
   const [companyNumber, setCompanyNumber] = useState(
     initial?.companyNumber ?? "",
   );
@@ -160,6 +164,10 @@ export function ClientForm({
       postalAddress: postalAddress.value,
       companyNumber: companyNumber.trim() || null,
       vatNumber: vatNumber.trim() || null,
+      // Left out while e-invoicing is off (= kept as it is).
+      buyerReference: einvoicingEnabled
+        ? buyerReference.trim() || null
+        : undefined,
       defaultRateMinor,
       defaultRateCurrency,
       defaultRateUnit: rateUnit,
@@ -238,6 +246,25 @@ export function ClientForm({
               countryOptions={countryOptions}
               error={postalError}
             />
+          ) : null}
+
+          {einvoicingEnabled ? (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="buyerReference">
+                Buyer reference / PO number (optional)
+              </Label>
+              <Input
+                id="buyerReference"
+                value={buyerReference}
+                onChange={(e) => setBuyerReference(e.target.value)}
+                maxLength={200}
+              />
+              <p className="text-xs text-muted-foreground">
+                Copied onto each new invoice for this client, where you can
+                change it. Some public bodies require one (Germany: the
+                Leitweg-ID).
+              </p>
+            </div>
           ) : null}
 
           <div className="flex flex-col gap-2">

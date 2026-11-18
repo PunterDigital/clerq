@@ -11,8 +11,9 @@ import {
 import { lineInputSchema } from "@/server/trpc/routers/invoices";
 
 // PATCH /api/v1/invoices/:invoiceId/lines/:lineId - change a draft line's
-// "description" and/or "amountMajor". A new amount replaces the line's
-// hours x rate breakdown. Answers with the invoice.
+// "description", "amountMajor" and/or "unitCode" (UN/ECE Rec 20). A new
+// amount replaces the line's hours x rate breakdown (and, unless "unitCode"
+// is sent too, makes it a C62 fixed amount). Answers with the invoice.
 // DELETE /api/v1/invoices/:invoiceId/lines/:lineId - remove a draft line; its
 // time goes back to unbilled.
 // Both are 409 once the invoice is issued.

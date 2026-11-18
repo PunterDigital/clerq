@@ -19,6 +19,12 @@ import {
 import type { Db } from "@/db";
 import { schema } from "@/db";
 
+import {
+  FIXED_LINE_UNIT,
+  TIME_LINE_UNIT,
+  type UnitCode,
+} from "@/lib/einvoice-codes";
+
 import { majorToMinor, minorToMajor } from "./currency";
 import {
   convertMinor,
@@ -530,6 +536,7 @@ export async function generateLinesFromUnbilledTime(
           quantity: line.quantity,
           unitPriceMinor: line.unitPriceMinor,
           totalMinor: line.totalMinor,
+          unitCode: TIME_LINE_UNIT,
           sourceCurrency: line.sourceCurrency,
           sourceTotalMinor: line.sourceTotalMinor,
           fxRate: line.fxRate,
@@ -583,7 +590,12 @@ export async function generateLinesFromUnbilledTime(
 export async function addManualLine(
   db: Db,
   businessId: string,
-  input: { invoiceId: string; description: string; amountMajor: string },
+  input: {
+    invoiceId: string;
+    description: string;
+    amountMajor: string;
+    unitCode?: UnitCode;
+  },
 ) {
   return db.transaction(async (tx) => {
     const [inv] = await tx
@@ -622,6 +634,7 @@ export async function addManualLine(
       quantity: null,
       unitPriceMinor: null,
       totalMinor,
+      unitCode: input.unitCode ?? FIXED_LINE_UNIT,
     });
 
     const updated = await recomputeInvoiceTotals(tx, businessId, inv.id);
@@ -640,7 +653,14 @@ export async function addManualLine(
 export async function updateInvoiceLine(
   db: Db,
   businessId: string,
-  input: { lineId: string; description: string; amountMajor: string },
+  input: {
+    lineId: string;
+    description: string;
+    amountMajor: string;
+    // Left out = keep, except that a changed amount turns the line into a
+    // fixed amount (C62) along with dropping its hours x rate breakdown.
+    unitCode?: UnitCode;
+  },
 ) {
   return db.transaction(async (tx) => {
     const [line] = await tx
@@ -680,6 +700,11 @@ export async function updateInvoiceLine(
         description: input.description,
         totalMinor,
         updatedAt: new Date(),
+        ...(input.unitCode
+          ? { unitCode: input.unitCode }
+          : amountChanged
+            ? { unitCode: FIXED_LINE_UNIT }
+            : {}),
         ...(amountChanged
           ? {
               quantity: null,
