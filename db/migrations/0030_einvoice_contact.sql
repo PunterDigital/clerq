@@ -1,0 +1,1 @@
+ALTER TABLE "business" ADD COLUMN "einvoice_contact" jsonb;

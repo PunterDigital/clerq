@@ -153,3 +153,39 @@ jobs:
             playwright-report
             test-results
           retention-days: 7
+
+  # E-invoice export (#5040): the fixture invoices in modules/einvoice/fixtures.ts,
+  # exported as Peppol BIS 3.0 UBL, must pass the CEN EN 16931 rules and the
+  # Peppol BIS rules with zero fatal errors. The validators (Saxon-HE, the CEN
+  # artefacts, SchXslt) run in a JDK container and never ship with Clerq; the
+  # script pins each download by SHA-256.
+  einvoice:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Export the fixture invoices
+        run: pnpm exec tsx scripts/einvoice-fixtures.ts "$RUNNER_TEMP/einvoices"
+
+      - name: Validate against EN 16931 and Peppol BIS 3.0
+        run: >-
+          docker run --rm -v "$PWD:/w:ro" -v "$RUNNER_TEMP:/t" eclipse-temurin:21-jdk
+          bash /w/scripts/validate-einvoices.sh /t/einvoices /t/einvoice-tools
+
+      - name: Upload the reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: einvoice-reports
+          path: ${{ runner.temp }}/einvoices
+          retention-days: 7

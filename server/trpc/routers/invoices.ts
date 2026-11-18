@@ -30,6 +30,7 @@ import {
   markInvoicePaid,
   voidInvoice,
 } from "@/modules/billing/lifecycle";
+import { exportEinvoice } from "@/modules/einvoice/service";
 
 import { createTRPCRouter, permissionProcedure } from "../init";
 
@@ -141,6 +142,14 @@ export const invoicesRouter = createTRPCRouter({
     .input(z.object({ invoiceId: z.string().uuid() }))
     .query(async ({ ctx, input }) =>
       found(await getInvoice(getDb(), ctx.businessId, input.invoiceId)),
+    ),
+
+  // The invoice as a Peppol BIS 3.0 UBL e-invoice (#5040): the XML, or the
+  // list of what to fill in first (drafts, missing addresses, IDs...).
+  einvoice: permissionProcedure("invoices.view")
+    .input(z.object({ invoiceId: z.string().uuid() }))
+    .query(async ({ ctx, input }) =>
+      found(await exportEinvoice(getDb(), ctx.businessId, input.invoiceId)),
     ),
 
   createDraft: permissionProcedure("invoices.create")

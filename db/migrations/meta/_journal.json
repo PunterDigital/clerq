@@ -211,6 +211,13 @@
       "when": 1795003574324,
       "tag": "0029_einvoicing_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1795004995322,
+      "tag": "0030_einvoice_contact",
+      "breakpoints": true
     }
   ]
 }

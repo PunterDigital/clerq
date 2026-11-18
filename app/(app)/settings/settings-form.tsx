@@ -38,6 +38,11 @@ export function SettingsForm({
     einvoicingEnabled: boolean;
     iban: string | null;
     bic: string | null;
+    einvoiceContact: {
+      name: string | null;
+      phone: string | null;
+      email: string | null;
+    } | null;
     currency: string;
     hoursPerDay: number;
     standardRatePct: string | null;
@@ -59,6 +64,15 @@ export function SettingsForm({
   const [iban, setIban] = useState(initial.iban ? formatIban(initial.iban) : "");
   const [bic, setBic] = useState(initial.bic ?? "");
   const [bankError, setBankError] = useState<string | null>(null);
+  const [contactName, setContactName] = useState(
+    initial.einvoiceContact?.name ?? "",
+  );
+  const [contactPhone, setContactPhone] = useState(
+    initial.einvoiceContact?.phone ?? "",
+  );
+  const [contactEmail, setContactEmail] = useState(
+    initial.einvoiceContact?.email ?? "",
+  );
   const [currency, setCurrency] = useState(initial.currency);
   const [hoursPerDay, setHoursPerDay] = useState(String(initial.hoursPerDay));
   const [standardRatePct, setStandardRatePct] = useState(
@@ -255,6 +269,11 @@ export function SettingsForm({
                 postalAddress: postalAddress.value,
                 iban: iban.trim() || null,
                 bic: bic.trim() || null,
+                contact: {
+                  name: contactName.trim() || null,
+                  phone: contactPhone.trim() || null,
+                  email: contactEmail.trim() || null,
+                },
               });
             }}
             className="flex flex-col gap-4"
@@ -313,6 +332,45 @@ export function SettingsForm({
                     {bankError}
                   </p>
                 ) : null}
+              </div>
+            ) : null}
+            {einvoicing ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-sm font-medium">
+                  Contact for e-invoices (optional)
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Who the buyer can ask about an invoice. German buyers need
+                  all three.
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex flex-1 flex-col gap-2">
+                    <Label htmlFor="einvoice-contact-name">Contact name</Label>
+                    <Input
+                      id="einvoice-contact-name"
+                      value={contactName}
+                      onChange={(e) => setContactName(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-1 flex-col gap-2">
+                    <Label htmlFor="einvoice-contact-phone">Phone</Label>
+                    <Input
+                      id="einvoice-contact-phone"
+                      type="tel"
+                      value={contactPhone}
+                      onChange={(e) => setContactPhone(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-1 flex-col gap-2">
+                    <Label htmlFor="einvoice-contact-email">Email</Label>
+                    <Input
+                      id="einvoice-contact-email"
+                      type="email"
+                      value={contactEmail}
+                      onChange={(e) => setContactEmail(e.target.value)}
+                    />
+                  </div>
+                </div>
               </div>
             ) : null}
             {updateEinvoicing.error ? (

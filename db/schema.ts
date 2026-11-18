@@ -38,6 +38,13 @@ const timestamps = {
     .defaultNow(),
 };
 
+// Shape of business.einvoice_contact (lib/einvoice-codes.ts validates it).
+export type EinvoiceContact = {
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+};
+
 export const business = pgTable("business", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
@@ -56,6 +63,9 @@ export const business = pgTable("business", {
   // lib/einvoice-codes.ts (IBAN checksum); printed on the PDF when set.
   iban: text("iban"),
   bic: text("bic"),
+  // Seller contact for e-invoices (EN 16931 BG-6: name, phone, email);
+  // required between two German parties (Peppol DE-R-002). Optional.
+  einvoiceContact: jsonb("einvoice_contact").$type<EinvoiceContact>(),
   // ISO 4217 code for the business's base currency. Stored as data only -
   // all interpretation (conversion, rounding) belongs to the billing module.
   currency: text("currency").notNull(),

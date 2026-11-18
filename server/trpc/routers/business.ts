@@ -8,7 +8,11 @@ import {
   postalAddressSchema,
 } from "@/lib/postal-address";
 import { EINVOICING_EEA_ONLY_MESSAGE, isEeaCountry } from "@/lib/eea";
-import { bicSchema, ibanSchema } from "@/lib/einvoice-codes";
+import {
+  bicSchema,
+  einvoiceContactSchema,
+  ibanSchema,
+} from "@/lib/einvoice-codes";
 import { getUserBusinesses, setActiveBusiness } from "@/server/membership";
 import {
   authedProcedure,
@@ -128,6 +132,7 @@ export const businessRouter = createTRPCRouter({
         einvoicingEnabled: schema.business.einvoicingEnabled,
         iban: schema.business.iban,
         bic: schema.business.bic,
+        einvoiceContact: schema.business.einvoiceContact,
         currency: schema.business.currency,
         hoursPerDay: schema.business.hoursPerDay,
         taxConfig: schema.business.taxConfig,
@@ -147,6 +152,7 @@ export const businessRouter = createTRPCRouter({
       einvoicingEnabled: row.einvoicingEnabled,
       iban: row.iban,
       bic: row.bic,
+      einvoiceContact: row.einvoiceContact ?? null,
       currency: row.currency,
       hoursPerDay: row.hoursPerDay,
       standardRatePct: taxConfig.standardRatePct ?? null,
@@ -235,6 +241,8 @@ export const businessRouter = createTRPCRouter({
         // null or "" clears; ignored while turning it off.
         iban: ibanSchema.optional(),
         bic: bicSchema.optional(),
+        // Seller contact for e-invoices (#5040). Same keep/clear rules.
+        contact: einvoiceContactSchema.optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -273,6 +281,9 @@ export const businessRouter = createTRPCRouter({
           postalAddress,
           ...(input.iban !== undefined ? { iban: input.iban } : {}),
           ...(input.bic !== undefined ? { bic: input.bic } : {}),
+          ...(input.contact !== undefined
+            ? { einvoiceContact: input.contact }
+            : {}),
           updatedAt: new Date(),
         })
         .where(eq(schema.business.id, ctx.businessId))
@@ -281,6 +292,7 @@ export const businessRouter = createTRPCRouter({
           postalAddress: schema.business.postalAddress,
           iban: schema.business.iban,
           bic: schema.business.bic,
+          einvoiceContact: schema.business.einvoiceContact,
         });
       return updated;
     }),
