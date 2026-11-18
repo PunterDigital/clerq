@@ -125,3 +125,52 @@ describe("multiple businesses per account", () => {
     expect(list[0]).toMatchObject({ businessId: alpha.id, isActive: true });
   });
 });
+
+describe("business settings - structured postal address", () => {
+  it("saves, returns, keeps when left out, and clears it", async () => {
+    const caller = callerFor("shay");
+    await caller.business.create({ name: "Alpha", currency: "GBP" });
+    const base = {
+      name: "Alpha",
+      currency: "GBP",
+      hoursPerDay: 8,
+      standardRatePct: null,
+      vatNumber: null,
+      address: "10115 Berlin",
+    };
+
+    await caller.business.updateSettings({
+      ...base,
+      postalAddress: { street: "Hauptstraße 5", city: "Berlin", postcode: "10115", country: "de" },
+    });
+    expect((await caller.business.settings()).postalAddress).toEqual({
+      street: "Hauptstraße 5",
+      city: "Berlin",
+      postcode: "10115",
+      region: null,
+      country: "DE",
+    });
+
+    await caller.business.updateSettings(base);
+    expect((await caller.business.settings()).postalAddress?.country).toBe("DE");
+
+    await caller.business.updateSettings({ ...base, postalAddress: null });
+    expect((await caller.business.settings()).postalAddress).toBeNull();
+  });
+
+  it("refuses an unknown country code", async () => {
+    const caller = callerFor("shay");
+    await caller.business.create({ name: "Alpha", currency: "GBP" });
+    await expect(
+      caller.business.updateSettings({
+        name: "Alpha",
+        currency: "GBP",
+        hoursPerDay: 8,
+        standardRatePct: null,
+        vatNumber: null,
+        address: null,
+        postalAddress: { city: "Nowhere", country: "XX" },
+      }),
+    ).rejects.toThrow(/country/i);
+  });
+});

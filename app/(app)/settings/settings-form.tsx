@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { CurrencySelect } from "@/components/currency-select";
+import {
+  PostalAddressFields,
+  postalAddressDraft,
+  postalAddressFromDraft,
+} from "@/components/postal-address-fields";
 import type { CurrencyOption } from "@/lib/currencies";
+import type { CountryOption, PostalAddress } from "@/lib/postal-address";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -21,23 +27,30 @@ import { useTRPC } from "@/server/trpc/client";
 export function SettingsForm({
   initial,
   currencyOptions,
+  countryOptions,
   currentYear,
 }: {
   initial: {
     name: string;
     address: string | null;
+    postalAddress: PostalAddress | null;
     currency: string;
     hoursPerDay: number;
     standardRatePct: string | null;
     vatNumber: string | null;
   };
   currencyOptions: CurrencyOption[];
+  countryOptions: CountryOption[];
   currentYear: number;
 }) {
   const router = useRouter();
   const trpc = useTRPC();
   const [name, setName] = useState(initial.name);
   const [address, setAddress] = useState(initial.address ?? "");
+  const [postal, setPostal] = useState(() =>
+    postalAddressDraft(initial.postalAddress),
+  );
+  const [postalError, setPostalError] = useState<string | null>(null);
   const [currency, setCurrency] = useState(initial.currency);
   const [hoursPerDay, setHoursPerDay] = useState(String(initial.hoursPerDay));
   const [standardRatePct, setStandardRatePct] = useState(
@@ -73,10 +86,17 @@ export function SettingsForm({
           <form
             onSubmit={(event) => {
               event.preventDefault();
+              setPostalError(null);
+              const postalAddress = postalAddressFromDraft(postal);
+              if ("error" in postalAddress) {
+                setPostalError(postalAddress.error);
+                return;
+              }
               const parsedHours = Number(hoursPerDay);
               update.mutate({
                 name,
                 address: address.trim() || null,
+                postalAddress: postalAddress.value,
                 currency,
                 hoursPerDay:
                   Number.isInteger(parsedHours) && parsedHours >= 1
@@ -111,6 +131,13 @@ export function SettingsForm({
                 Printed on your invoices, exactly as written here
               </p>
             </div>
+            <PostalAddressFields
+              value={postal}
+              onChange={setPostal}
+              freeText={address}
+              countryOptions={countryOptions}
+              error={postalError}
+            />
             <div className="flex flex-col gap-4 sm:flex-row">
               <div className="flex flex-col gap-2 sm:w-64">
                 <Label htmlFor="currency">Base currency</Label>

@@ -3,6 +3,10 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { getDb, schema } from "@/db";
+import {
+  normalizePostalAddress,
+  postalAddressSchema,
+} from "@/lib/postal-address";
 import { getUserBusinesses, setActiveBusiness } from "@/server/membership";
 import {
   authedProcedure,
@@ -115,6 +119,7 @@ export const businessRouter = createTRPCRouter({
       .select({
         name: schema.business.name,
         address: schema.business.address,
+        postalAddress: schema.business.postalAddress,
         currency: schema.business.currency,
         hoursPerDay: schema.business.hoursPerDay,
         taxConfig: schema.business.taxConfig,
@@ -130,6 +135,7 @@ export const businessRouter = createTRPCRouter({
     return {
       name: row.name,
       address: row.address,
+      postalAddress: row.postalAddress ?? null,
       currency: row.currency,
       hoursPerDay: row.hoursPerDay,
       standardRatePct: taxConfig.standardRatePct ?? null,
@@ -160,6 +166,8 @@ export const businessRouter = createTRPCRouter({
           .nullable(),
         vatNumber: z.string().trim().max(30).nullable(),
         address: z.string().trim().max(500).nullable(),
+        // Structured copy for e-invoices. Left out = keep; null clears it.
+        postalAddress: postalAddressSchema.nullable().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -168,6 +176,9 @@ export const businessRouter = createTRPCRouter({
         .set({
           name: input.name,
           address: input.address,
+          ...(input.postalAddress !== undefined
+            ? { postalAddress: normalizePostalAddress(input.postalAddress) }
+            : {}),
           currency: input.currency,
           hoursPerDay: input.hoursPerDay,
           taxConfig: {

@@ -5,11 +5,21 @@ import { Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import {
+  PostalAddressFields,
+  postalAddressDraft,
+  postalAddressFromDraft,
+} from "@/components/postal-address-fields";
 import { RateFields, type RateUnit } from "@/components/rate-fields";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type {
+  CountryOption,
+  PostalAddress,
+  PostalAddressInput,
+} from "@/lib/postal-address";
 import { majorToMinor, minorToMajor } from "@/modules/billing/currency";
 import { useTRPC } from "@/server/trpc/client";
 
@@ -20,6 +30,7 @@ export type ClientFormValues = {
   contacts: Contact[];
   notes?: string;
   address?: string | null;
+  postalAddress?: PostalAddress | PostalAddressInput | null;
   companyNumber?: string | null;
   vatNumber?: string | null;
   defaultRateMinor?: number | null;
@@ -32,9 +43,11 @@ export type ClientFormValues = {
 export function ClientForm({
   clientId,
   initial,
+  countryOptions,
 }: {
   clientId?: string;
   initial?: ClientFormValues;
+  countryOptions: CountryOption[];
 }) {
   const router = useRouter();
   const trpc = useTRPC();
@@ -66,6 +79,10 @@ export function ClientForm({
     initial?.companyNumber ?? "",
   );
   const [address, setAddress] = useState(initial?.address ?? "");
+  const [postal, setPostal] = useState(() =>
+    postalAddressDraft(initial?.postalAddress as PostalAddress | null),
+  );
+  const [postalError, setPostalError] = useState<string | null>(null);
 
   const create = useMutation(
     trpc.clients.create.mutationOptions({
@@ -94,6 +111,12 @@ export function ClientForm({
   function submit(event: React.FormEvent) {
     event.preventDefault();
     setRateError(null);
+    setPostalError(null);
+    const postalAddress = postalAddressFromDraft(postal);
+    if ("error" in postalAddress) {
+      setPostalError(postalAddress.error);
+      return;
+    }
     let defaultRateMinor: number | null = null;
     let defaultRateCurrency: string | null = null;
     if (rate.trim()) {
@@ -128,6 +151,7 @@ export function ClientForm({
       name,
       notes: notes || undefined,
       address: address.trim() || null,
+      postalAddress: postalAddress.value,
       companyNumber: companyNumber.trim() || null,
       vatNumber: vatNumber.trim() || null,
       defaultRateMinor,
@@ -199,6 +223,14 @@ export function ClientForm({
               Printed on invoices in the &ldquo;Billed to&rdquo; block.
             </p>
           </div>
+
+          <PostalAddressFields
+            value={postal}
+            onChange={setPostal}
+            freeText={address}
+            countryOptions={countryOptions}
+            error={postalError}
+          />
 
           <div className="flex flex-col gap-2">
             <Label>Contacts</Label>

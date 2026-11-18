@@ -90,7 +90,7 @@ another business or isn't a UUID is a 404.
 | Method and path | What it does |
 | --- | --- |
 | `GET /clients` | List clients, newest first. `?search=` (name contains), `?includeArchived=true` |
-| `POST /clients` | Create a client: `name` (required), `contacts`, `notes`, `address`, `companyNumber`, `vatNumber`, `defaultRateMinor`, `defaultRateCurrency`, `defaultRateUnit` (`hour` or `day`), `budgetMinor`, `budgetCurrency` |
+| `POST /clients` | Create a client: `name` (required), `contacts`, `notes`, `address` (free text, printed on invoices), `postalAddress` (the same address in parts for e-invoices: `{ "street", "city", "postcode", "region", "country" }`, `country` an ISO 3166-1 code like `GB` and required, the rest optional; `null` clears it), `companyNumber`, `vatNumber`, `defaultRateMinor`, `defaultRateCurrency`, `defaultRateUnit` (`hour` or `day`), `budgetMinor`, `budgetCurrency` |
 | `GET /clients/{id}` | One client |
 | `PATCH /clients/{id}` | Change a client's fields |
 | `POST /clients/{id}/archive` | Archive a client |

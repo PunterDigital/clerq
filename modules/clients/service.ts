@@ -3,6 +3,10 @@ import { z } from "zod";
 
 import type { Db } from "@/db";
 import { schema } from "@/db";
+import {
+  normalizePostalAddress,
+  postalAddressSchema,
+} from "@/lib/postal-address";
 import { likeContains } from "@/lib/search";
 
 // Every function takes the caller's businessId and applies it to every
@@ -35,6 +39,9 @@ export const clientInputSchema = z.object({
   notes: z.string().trim().max(10_000).optional(),
   // Postal address, newline-separated, printed on invoices. Stored verbatim.
   address: z.string().trim().max(1_000).nullable().optional(),
+  // The same address in parts, for e-invoices. Left out on update = keep the
+  // stored one (older callers don't know the field); null clears it.
+  postalAddress: postalAddressSchema.nullable().optional(),
   // Company / registration number (Companies House, IČO, etc.).
   companyNumber: z.string().trim().max(50).nullable().optional(),
   // Stored verbatim; validated only for shape. Required at issue time for
@@ -125,6 +132,7 @@ export async function createClient(
         contacts: input.contacts,
         notes: input.notes ?? null,
         address: input.address || null,
+        postalAddress: normalizePostalAddress(input.postalAddress) ?? null,
         companyNumber: input.companyNumber || null,
         vatNumber: input.vatNumber || null,
         defaultRateMinor: input.defaultRateMinor ?? null,
@@ -160,6 +168,10 @@ export async function updateClient(
         contacts: input.contacts,
         notes: input.notes ?? null,
         address: input.address || null,
+        // Only touched when the caller sent it (undefined = keep).
+        ...(input.postalAddress !== undefined
+          ? { postalAddress: normalizePostalAddress(input.postalAddress) }
+          : {}),
         companyNumber: input.companyNumber || null,
         vatNumber: input.vatNumber || null,
         defaultRateMinor: input.defaultRateMinor ?? null,
