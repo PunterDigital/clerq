@@ -91,6 +91,16 @@ describe("file-download routes refuse anonymous requests", () => {
     expect(await res.text()).toBe("Sign in first");
   });
 
+  it("serves no e-invoice XML without a session", async () => {
+    const { GET } = await import("@/app/api/invoices/[invoiceId]/einvoice/route");
+    const res = await GET(
+      new Request("http://localhost/api/invoices/inv-1/einvoice"),
+      { params: Promise.resolve({ invoiceId: "inv-1" }) },
+    );
+    expect(res.status).toBe(401);
+    expect(await res.text()).toBe("Sign in first");
+  });
+
   it("rejects a forged PDF link token instead of streaming the PDF", async () => {
     const { GET } = await import("@/app/api/invoices/[invoiceId]/pdf/route");
     // A guessed/tampered token must never resolve to a business - otherwise a
@@ -265,6 +275,7 @@ const PUBLIC_PAGES = [
 // Routes whose anonymous behaviour is asserted by the live tests above.
 const PROTECTED_ROUTES = [
   "api/invoices/[invoiceId]/pdf/route.ts",
+  "api/invoices/[invoiceId]/einvoice/route.ts",
   "api/expenses/receipts/route.ts",
   "api/export/route.ts",
   "api/mcp/route.ts",

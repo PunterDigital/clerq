@@ -48,6 +48,12 @@ export default async function InvoiceDetailPage({
     caller.business.current(),
   ]);
   const einvoicingEnabled = business?.einvoicingEnabled ?? false;
+  // Issued invoices can be exported as Peppol BIS 3.0 XML (#5040); the
+  // check runs here so the page can say what's missing instead.
+  const einvoice =
+    einvoicingEnabled && invoice.status !== "draft" && invoice.status !== "void"
+      ? await caller.invoices.einvoice({ invoiceId: invoice.id })
+      : null;
   const isDraft = invoice.status === "draft";
 
   return (
@@ -91,6 +97,13 @@ export default async function InvoiceDetailPage({
             <Button variant="outline" asChild>
               <a href={`/api/invoices/${invoice.id}/pdf`} download>
                 Download PDF
+              </a>
+            </Button>
+          ) : null}
+          {einvoice?.ok ? (
+            <Button variant="outline" asChild>
+              <a href={`/api/invoices/${invoice.id}/einvoice`} download>
+                Download e-invoice (XML)
               </a>
             </Button>
           ) : null}
@@ -223,6 +236,23 @@ export default async function InvoiceDetailPage({
         </div>
 
         <div className="flex flex-col gap-6">
+          {einvoice && !einvoice.ok ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>E-invoice</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2 text-sm">
+                <p className="text-muted-foreground">
+                  To download this invoice as an e-invoice (XML), add:
+                </p>
+                <ul className="list-disc pl-5" aria-label="Missing for the e-invoice">
+                  {einvoice.missing.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          ) : null}
           <Card>
             <CardHeader>
               <CardTitle>Totals</CardTitle>

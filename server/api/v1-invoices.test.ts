@@ -1,6 +1,8 @@
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { eq } from "drizzle-orm";
+
 import { schema, setTestDb, type Db } from "@/db";
 import { createTestDatabase } from "@/db/testing";
 
@@ -68,6 +70,7 @@ const markPaidRoute = () => import("@/app/api/v1/invoices/[invoiceId]/mark-paid/
 const voidRoute = () => import("@/app/api/v1/invoices/[invoiceId]/void/route");
 const duplicateRoute = () => import("@/app/api/v1/invoices/[invoiceId]/duplicate/route");
 const pdfLinkRoute = () => import("@/app/api/v1/invoices/[invoiceId]/pdf-link/route");
+const einvoiceRoute = () => import("@/app/api/v1/invoices/[invoiceId]/einvoice/route");
 const schedulesRoute = () => import("@/app/api/v1/recurring-invoices/route");
 const scheduleRoute = () => import("@/app/api/v1/recurring-invoices/[scheduleId]/route");
 const scheduleInvoicesRoute = () =>
@@ -281,6 +284,61 @@ describe("/api/v1/invoices", () => {
       body: { buyerReference: null, vatexCode: null },
     });
     expect(cleared.body).toMatchObject({ buyerReference: null, vatexCode: null });
+  });
+
+  it("exports an issued invoice as Peppol XML, and lists what's missing otherwise (#5040)", async () => {
+    const { POST } = await clientsRoute();
+    const client = await call(POST, "POST", "/api/v1/clients", writeA, {
+      body: {
+        name: "Lumen Labs B.V.",
+        vatNumber: "NL812345678B01",
+        buyerReference: "PO-9",
+        postalAddress: { street: "Keizersgracht 100", city: "Amsterdam", postcode: "1015 AA", country: "NL" },
+      },
+    });
+    const invoiceId = await makeDraft(writeA, client.body.id);
+    await addLine(writeA, invoiceId, "500.00");
+
+    const { GET } = await einvoiceRoute();
+    const get = async (key: string) =>
+      GET(
+        new Request(`http://localhost/api/v1/invoices/${invoiceId}/einvoice`, {
+          headers: { authorization: `Bearer ${key}` },
+        }),
+        { params: Promise.resolve({ invoiceId }) },
+      );
+
+    const off = await get(readA);
+    expect(off.status).toBe(422);
+    const offBody = await off.json();
+    expect(offBody.error.message).toMatch(/Turn on e-invoicing/);
+    expect(offBody.error.message).toMatch(/Issue the invoice first/);
+
+    await db
+      .update(schema.business)
+      .set({
+        einvoicingEnabled: true,
+        taxConfig: { vatNumber: "DE123456789" },
+        postalAddress: { street: "Hauptstraße 5", city: "Berlin", postcode: "10115", region: null, country: "DE" },
+      })
+      .where(eq(schema.business.id, bizA));
+    try {
+      expect((await issue(writeA, invoiceId)).status).toBe(200);
+      const res = await get(readA);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toMatch(/^application\/xml/);
+      const xml = await res.text();
+      expect(xml).toContain("<cbc:BuyerReference>PO-9</cbc:BuyerReference>");
+      expect(xml).toContain('<cbc:EndpointID schemeID="9930">DE123456789</cbc:EndpointID>');
+
+      // Another business's key gets nothing.
+      expect((await get(writeB)).status).toBe(404);
+    } finally {
+      await db
+        .update(schema.business)
+        .set({ einvoicingEnabled: false, taxConfig: {}, postalAddress: null })
+        .where(eq(schema.business.id, bizA));
+    }
   });
 
   it("names the field when a draft is invalid", async () => {

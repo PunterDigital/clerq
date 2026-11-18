@@ -1374,6 +1374,20 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
       }),
   );
 
+  server.registerTool(
+    "get_invoice_einvoice",
+    {
+      title: "Get invoice as an e-invoice (XML)",
+      description:
+        "Return an issued invoice as a UBL 2.1 e-invoice in the Peppol BIS Billing 3.0 format (EN 16931), as XML text with a suggested filename. Needs e-invoicing on in the business settings. If something is missing (structured addresses, VAT numbers, a buyer reference...), returns the list of what to fill in instead.",
+      inputSchema: { invoiceId: z.string().uuid() },
+    },
+    ({ invoiceId }) =>
+      runTool(async () =>
+        toolJson(await caller.invoices.einvoice({ invoiceId })),
+      ),
+  );
+
   // --- Reports ------------------------------------------------------------
   server.registerTool(
     "get_profit_summary",

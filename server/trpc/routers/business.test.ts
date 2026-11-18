@@ -258,6 +258,43 @@ describe("business settings - e-invoicing opt-in (#5065)", () => {
     expect(settings).toMatchObject({ iban: null, bic: null });
   });
 
+  it("saves the e-invoice contact, checks phone and email, and clears it when empty (#5040)", async () => {
+    const caller = callerFor("shay");
+    await caller.business.create({ name: "Alpha", currency: "EUR" });
+    await expect(
+      caller.business.updateEinvoicing({
+        enabled: true,
+        postalAddress: berlin,
+        contact: { name: "Anna", phone: "12", email: "anna@nord.test" },
+      }),
+    ).rejects.toThrow(/at least 3 digits/);
+    await expect(
+      caller.business.updateEinvoicing({
+        enabled: true,
+        postalAddress: berlin,
+        contact: { name: "Anna", phone: "+49 30 1234567", email: "not-an-email" },
+      }),
+    ).rejects.toThrow(/email/);
+
+    await caller.business.updateEinvoicing({
+      enabled: true,
+      postalAddress: berlin,
+      contact: { name: " Anna Nord ", phone: "+49 30 1234567", email: "anna@nord.test" },
+    });
+    expect((await caller.business.settings()).einvoiceContact).toEqual({
+      name: "Anna Nord",
+      phone: "+49 30 1234567",
+      email: "anna@nord.test",
+    });
+    await caller.business.updateEinvoicing({ enabled: true });
+    expect((await caller.business.settings()).einvoiceContact?.name).toBe("Anna Nord");
+    await caller.business.updateEinvoicing({
+      enabled: true,
+      contact: { name: "", phone: "", email: "" },
+    });
+    expect((await caller.business.settings()).einvoiceContact).toBeNull();
+  });
+
   it("turning it off keeps the address, and turning it back on brings it back", async () => {
     const caller = callerFor("shay");
     await caller.business.create({ name: "Alpha", currency: "EUR" });

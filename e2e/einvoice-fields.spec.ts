@@ -21,6 +21,7 @@ let businessBefore: {
   einvoicing_enabled: boolean;
   iban: string | null;
   bic: string | null;
+  einvoice_contact: unknown;
 } | null = null;
 
 async function withDb<T>(fn: (db: Client) => Promise<T>): Promise<T> {
@@ -44,7 +45,7 @@ test.beforeAll(async () => {
     );
     businessId = demo.rows[0].business_id;
     const before = await db.query<NonNullable<typeof businessBefore>>(
-      `select postal_address, einvoicing_enabled, iban, bic from business where id = $1`,
+      `select postal_address, einvoicing_enabled, iban, bic, einvoice_contact from business where id = $1`,
       [businessId],
     );
     businessBefore = before.rows[0];
@@ -73,8 +74,8 @@ test.afterAll(async () => {
   await withDb(async (db) => {
     if (businessBefore) {
       await db.query(
-        `update business set postal_address = $2, einvoicing_enabled = $3, iban = $4, bic = $5
-          where id = $1`,
+        `update business set postal_address = $2, einvoicing_enabled = $3, iban = $4, bic = $5,
+           einvoice_contact = $6 where id = $1`,
         [
           businessId,
           businessBefore.postal_address == null
@@ -83,6 +84,9 @@ test.afterAll(async () => {
           businessBefore.einvoicing_enabled,
           businessBefore.iban,
           businessBefore.bic,
+          businessBefore.einvoice_contact == null
+            ? null
+            : JSON.stringify(businessBefore.einvoice_contact),
         ],
       );
     }
@@ -102,8 +106,23 @@ test("Settings checks and saves the IBAN and BIC", async ({ page }) => {
 
   await iban.fill("de89 3704 0044 0532 0130 00");
   await bic.fill("cobadeffxxx");
+  // Seller contact for e-invoices (#5040).
+  await page.getByLabel("Contact name").fill("Anna Nord");
+  await page.getByLabel("Phone", { exact: true }).fill("+49 30 1234567");
+  await page.getByLabel("Email", { exact: true }).fill("billing@studio-nord.example");
   await save.click();
   await expect(page.getByText("E-invoicing is on")).toBeVisible();
+  const contact = await withDb((db) =>
+    db.query<{ einvoice_contact: unknown }>(
+      `select einvoice_contact from business where id = $1`,
+      [businessId],
+    ),
+  );
+  expect(contact.rows[0].einvoice_contact).toEqual({
+    name: "Anna Nord",
+    phone: "+49 30 1234567",
+    email: "billing@studio-nord.example",
+  });
 
   await page.reload();
   await expect(page.getByLabel("IBAN", { exact: true })).toHaveValue(

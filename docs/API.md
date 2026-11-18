@@ -172,6 +172,7 @@ A change the status doesn't allow is a 409.
 | `POST /invoices/{id}/void` | Void a sent or overdue invoice, optionally `{ "reason": "..." }`. It keeps its number; its time goes back to unbilled |
 | `POST /invoices/{id}/duplicate` | Copy any invoice into a new draft |
 | `GET /invoices/{id}/pdf-link` | `{ "url", "invoiceNumber", "expiresInSeconds" }`: a link that downloads the PDF without a key or login, for 15 minutes |
+| `GET /invoices/{id}/einvoice` | The issued invoice as a Peppol BIS Billing 3.0 UBL e-invoice (`application/xml`). Needs e-invoicing on in Settings; 422 lists what to fill in first |
 
 Line amounts are sent as `amountMajor`, a plain decimal string in the
 invoice's currency (`"1500"` or `"1500.00"`), and come back in minor units

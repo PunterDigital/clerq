@@ -114,6 +114,40 @@ export const bicSchema = z
     message: "A BIC is 8 or 11 letters and digits, like DEUTDEFF",
   });
 
+// Seller contact for e-invoices (BG-6). Empty parts become null; a contact
+// with nothing in it is stored as null.
+export const einvoiceContactSchema = z
+  .object({
+    name: z.string().trim().max(200).nullable().optional(),
+    phone: z
+      .string()
+      .trim()
+      .max(50)
+      .refine((v) => v === "" || /\d{3,}/.test(v.replace(/\D/g, "")), {
+        message: "A phone number needs at least 3 digits",
+      })
+      .nullable()
+      .optional(),
+    email: z
+      .string()
+      .trim()
+      .max(200)
+      .refine((v) => v === "" || z.string().email().safeParse(v).success, {
+        message: "That email address doesn't look right",
+      })
+      .nullable()
+      .optional(),
+  })
+  .transform((c) => {
+    const out = {
+      name: c.name || null,
+      phone: c.phone || null,
+      email: c.email || null,
+    };
+    return out.name || out.phone || out.email ? out : null;
+  })
+  .nullable();
+
 // Trimmed, "" -> null: for service-layer callers that skip the schema.
 export function normalizeBuyerReference(
   value: string | null | undefined,

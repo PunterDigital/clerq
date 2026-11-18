@@ -422,6 +422,14 @@ export const API_OPERATIONS: ApiOperation[] = [
     summary: "A PDF download link",
     description: "A signed URL that downloads the PDF without a key or login, valid for 15 minutes.",
   },
+  {
+    method: "get",
+    path: "/invoices/{invoiceId}/einvoice",
+    tag: "Invoices",
+    summary: "The invoice as an e-invoice (XML)",
+    description:
+      "An issued invoice as a UBL 2.1 e-invoice in the Peppol BIS Billing 3.0 format (application/xml). Needs e-invoicing on in Settings. 422 lists what to fill in first.",
+  },
 
   // -- Recurring invoices
   {
