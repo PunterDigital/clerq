@@ -162,6 +162,11 @@ describe("Clerq MCP server", () => {
     expect(names).toEqual(
       expect.arrayContaining([
         "whoami",
+        "get_business_settings",
+        "update_business_settings",
+        "update_einvoicing_settings",
+        "update_branding",
+        "set_credit_note_prefix",
         "list_clients",
         "get_client",
         "create_client",

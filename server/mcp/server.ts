@@ -232,6 +232,180 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
     () => runTool(async () => toolJson(await caller.business.current())),
   );
 
+  // --- Business settings (#5260) -------------------------------------------
+  // The Settings page's procedures, same permissions. Every update reads the
+  // current settings first, so a field the model leaves out is kept as is.
+  const publicSettings = async () => {
+    const { logoDataUrl, ...settings } = await caller.business.settings();
+    return { ...settings, hasLogo: logoDataUrl !== null };
+  };
+
+  server.registerTool(
+    "get_business_settings",
+    {
+      title: "Get business settings",
+      description:
+        "Return the active business's settings: name, address (free text and structured), currency, hours per day, standard VAT rate and VAT number, e-invoicing details (on/off, IBAN/BIC, contact, Peppol ID, company number and register), credit note prefix, brand colour and invoice footer note. The logo is not returned, only whether one is set. Needs permission to view settings; changing them needs permission to edit settings (branding: to edit branding).",
+    },
+    () => runTool(async () => toolJson(await publicSettings())),
+  );
+
+  server.registerTool(
+    "update_business_settings",
+    {
+      title: "Update business settings",
+      description:
+        "Change the business's name, address, currency, hours per day, standard VAT rate or VAT number. Only the fields you pass change; everything left out is kept. While e-invoicing is on, the structured address must stay in the EEA. Returns the updated settings.",
+      inputSchema: {
+        name: z.string().optional().describe("Business name, printed on invoices."),
+        address: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("Postal address as free text, newline-separated; printed on invoices. null clears it."),
+        postalAddress: clientFields.postalAddress.describe(
+          "The same address in parts, used for e-invoices (EN 16931). null clears it (refused while e-invoicing is on).",
+        ),
+        currency: currencyField.optional().describe(`Default currency. ${CURRENCY}`),
+        hoursPerDay: z
+          .number()
+          .int()
+          .min(1)
+          .max(24)
+          .optional()
+          .describe("Working hours per billing day: a day rate is divided by this."),
+        standardRatePct: z
+          .string()
+          .nullable()
+          .optional()
+          .describe('Standard VAT rate as a plain number string, e.g. "21" or "12.5". null removes it.'),
+        vatNumber: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("The business's own VAT number, e.g. NL123456789B01. null removes it."),
+      },
+    },
+    (args) =>
+      runTool(async () => {
+        const current = await caller.business.settings();
+        const pick = <T,>(value: T | undefined, fallback: T): T =>
+          value === undefined ? fallback : value;
+        await caller.business.updateSettings({
+          name: pick(args.name, current.name),
+          address: pick(args.address, current.address),
+          currency: pick(args.currency, current.currency),
+          hoursPerDay: pick(args.hoursPerDay, current.hoursPerDay),
+          standardRatePct: pick(args.standardRatePct, current.standardRatePct),
+          vatNumber: pick(args.vatNumber, current.vatNumber),
+          ...(args.postalAddress !== undefined ? { postalAddress: args.postalAddress } : {}),
+        });
+        return toolJson(await publicSettings());
+      }),
+  );
+
+  server.registerTool(
+    "update_einvoicing_settings",
+    {
+      title: "Update e-invoicing settings",
+      description:
+        "Turn e-invoicing on or off and set the details e-invoices need. Only the fields you pass change; null or an empty string clears one. Turning it on needs a structured business address in the EEA (passed here or already saved). While turning it off, the other fields are ignored and the saved ones are kept. Returns the updated settings.",
+      inputSchema: {
+        enabled: z
+          .boolean()
+          .optional()
+          .describe("Whether e-invoicing is on. Left out = unchanged."),
+        postalAddress: clientFields.postalAddress
+          .unwrap()
+          .unwrap()
+          .optional()
+          .describe("The business's structured address (EEA country required)."),
+        iban: z.string().nullable().optional().describe("Bank account IBAN for payment instructions."),
+        bic: z.string().nullable().optional().describe("BIC / SWIFT code of the bank."),
+        contact: z
+          .object({
+            name: z.string().nullable().optional(),
+            phone: z.string().nullable().optional(),
+            email: z.string().nullable().optional(),
+          })
+          .nullable()
+          .optional()
+          .describe("Seller contact printed in e-invoices. null clears it."),
+        peppolId: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("The business's own Peppol ID as scheme:value, e.g. 0184:12345678."),
+        companyNumber: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("Company registration number (e.g. KVK, CVR). Clearing it clears the register too."),
+        companyNumberScheme: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("The register's 4-digit ICD code, e.g. 0106 for the Dutch KVK, 0184 for the Danish CVR."),
+      },
+    },
+    ({ enabled, ...fields }) =>
+      runTool(async () => {
+        const current = await caller.business.settings();
+        await caller.business.updateEinvoicing({
+          enabled: enabled ?? current.einvoicingEnabled,
+          ...fields,
+        });
+        return toolJson(await publicSettings());
+      }),
+  );
+
+  server.registerTool(
+    "update_branding",
+    {
+      title: "Update invoice branding",
+      description:
+        "Set the brand colour and the footer note printed on invoices. Only the fields you pass change; null clears one. The logo can only be changed in the web app and is always kept. Returns the updated settings.",
+      inputSchema: {
+        brandColor: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("Brand colour as #rrggbb, e.g. #228E80."),
+        footerNote: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("A short line printed at the foot of every invoice (up to 2000 characters)."),
+      },
+    },
+    ({ brandColor, footerNote }) =>
+      runTool(async () => {
+        const current = await caller.business.settings();
+        await caller.business.updateBranding({
+          logoDataUrl: current.logoDataUrl,
+          brandColor: brandColor === undefined ? current.brandColor : brandColor,
+          footerNote: footerNote === undefined ? current.footerNote : footerNote,
+        });
+        return toolJson(await publicSettings());
+      }),
+  );
+
+  server.registerTool(
+    "set_credit_note_prefix",
+    {
+      title: "Set credit note prefix",
+      description:
+        'Set the prefix of new credit note numbers (default "CN-"). Up to 10 letters, digits or - / _ . Credit notes already issued keep their numbers.',
+      inputSchema: {
+        prefix: z.string().describe('The prefix, e.g. "CN-" or "CR/". An empty string means no prefix.'),
+      },
+    },
+    ({ prefix }) =>
+      runTool(async () =>
+        toolJson(await caller.invoices.configureCreditNotePrefix({ prefix })),
+      ),
+  );
+
   // --- Clients ------------------------------------------------------------
   server.registerTool(
     "list_clients",

@@ -76,8 +76,9 @@ data directly, under the same permissions and per-business boundary as the web
 app.
 
 - **50+ tools** spanning clients (with contacts, notes and per-member rates),
-  projects, tasks, time tracking, invoicing, expenses, profit reporting and
-  team management.
+  projects, tasks, time tracking, invoicing, expenses, profit reporting, team
+  management and the business's own settings (address, VAT, e-invoicing
+  details, branding).
 - **Every tool wraps the same tRPC layer the UI uses**, so validation and the
   per-business tenancy boundary are identical; an assistant never gets a side
   door into your data.

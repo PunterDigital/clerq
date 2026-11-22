@@ -325,6 +325,52 @@ test("REST API: an invoice made and issued with a key shows in the app, and its 
   expect(removed.status()).toBe(200);
 });
 
+test("MCP: an assistant reads and changes the business settings, and Settings shows it", async ({
+  request,
+}) => {
+  const key = await createKey("write");
+  let id = 0;
+  const tool = async (name: string, args: Record<string, unknown> = {}) => {
+    const res = await request.post("/api/mcp", {
+      headers: {
+        authorization: `Bearer ${key}`,
+        accept: "application/json, text/event-stream",
+      },
+      data: { jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } },
+    });
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    const text: string = body.result.content[0].text;
+    return { isError: body.result.isError === true, text, json: body.result.isError ? null : JSON.parse(text) };
+  };
+
+  const before = await tool("get_business_settings");
+  expect(before.isError).toBe(false);
+  expect(before.json.name).toBeTruthy();
+  expect(before.json).not.toHaveProperty("logoDataUrl");
+
+  // Only the footer changes; the name and VAT number stay as they were.
+  const footer = `Thanks from MCP ${Date.now()}`;
+  const after = await tool("update_branding", { footerNote: footer });
+  expect(after.json).toMatchObject({
+    footerNote: footer,
+    name: before.json.name,
+    vatNumber: before.json.vatNumber,
+    brandColor: before.json.brandColor,
+  });
+
+  await page.goto("/settings/branding");
+  await expect(page.getByLabel("Invoice footer")).toHaveValue(footer);
+
+  // A bad value comes back as a readable tool error.
+  const bad = await tool("update_business_settings", { standardRatePct: "lots" });
+  expect(bad.isError).toBe(true);
+  expect(bad.text).toMatch(/plain number/i);
+
+  // Put the footer back for the other specs.
+  await tool("update_branding", { footerNote: before.json.footerNote });
+});
+
 test("REST API: an expense made with a key shows in the app, and can be marked paid", async ({
   request,
 }) => {
