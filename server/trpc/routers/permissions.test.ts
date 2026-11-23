@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { PGlite } from "@electric-sql/pglite";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { schema, setTestDb, type Db } from "@/db";
@@ -578,5 +579,212 @@ describe("custom roles (end-to-end)", () => {
     });
     expect(invitation.role).toBe("custom");
     expect(invitation.businessRoleId).toBe(made.id);
+  });
+});
+
+// #5582: inviting or setting a role is handing out its permissions, so a
+// non-owner may only hand out a role whose permissions they all hold (the rule
+// createRole and setPermission already used). Before, a manager could invite a
+// second account as admin and get every permission, and a custom role with
+// team.manageRoles could promote a colluding member above itself.
+describe("role escalation guards (#5582)", () => {
+  const owner = "esc-owner";
+  const admin = "esc-admin";
+  const manager = "esc-manager";
+  const member = "esc-member";
+  const adminTarget = "esc-admin-target";
+  // A custom role holding team.manageRoles and a few other permissions.
+  const delegate = "esc-delegate";
+  let smallRoleId = "";
+  let teamViewRoleId = "";
+  let bigRoleId = "";
+
+  const email = (tag: string) => `${tag}-${randomUUID()}@test.dev`;
+
+  beforeAll(async () => {
+    const biz = await seedBusiness("escalation");
+    await addMember(biz.id, owner, "owner", "esc-owner@t.dev");
+    await addMember(biz.id, admin, "admin", "esc-admin@t.dev");
+    await addMember(biz.id, manager, "manager", "esc-manager@t.dev");
+    await addMember(biz.id, member, "member", "esc-member@t.dev");
+    await addMember(biz.id, adminTarget, "admin", "esc-admin-target@t.dev");
+    await addMember(biz.id, delegate, "member", "esc-delegate@t.dev");
+
+    const delegateRole = await callerFor(owner).team.createRole({
+      name: "Role manager",
+      permissions: ["team.view", "team.manageRoles", "team.invite", "clients.view"],
+    });
+    await callerFor(owner).team.setRole({ userId: delegate, role: delegateRole.id });
+    smallRoleId = (
+      await callerFor(owner).team.createRole({
+        name: "Clients only",
+        permissions: ["clients.view"],
+      })
+    ).id;
+    teamViewRoleId = (
+      await callerFor(owner).team.createRole({
+        name: "Clients and team",
+        permissions: ["clients.view", "team.view"],
+      })
+    ).id;
+    bigRoleId = (
+      await callerFor(owner).team.createRole({
+        name: "Keys and profit",
+        permissions: ["clients.view", "apiKeys.manage", "reports.viewProfit"],
+      })
+    ).id;
+  });
+
+  it("refuses a manager inviting someone as admin", async () => {
+    await expectDenied("manager-invite-admin", () =>
+      callerFor(manager).team.invite({ email: email("m-admin"), role: "admin" }),
+    );
+  });
+
+  it("refuses a manager inviting as a role with permissions they lack", async () => {
+    await expectDenied("manager-invite-accountant", () =>
+      callerFor(manager).team.invite({ email: email("m-acct"), role: "accountant" }),
+    );
+    await expectDenied("manager-invite-big-custom", () =>
+      callerFor(manager).team.invite({ email: email("m-big"), role: bigRoleId }),
+    );
+  });
+
+  it("still lets a manager invite as roles within their own set", async () => {
+    const asMember = await callerFor(manager).team.invite({
+      email: email("m-member"),
+      role: "member",
+    });
+    expect(asMember.role).toBe("member");
+    const asManager = await callerFor(manager).team.invite({
+      email: email("m-manager"),
+      role: "manager",
+    });
+    expect(asManager.role).toBe("manager");
+    const asCustom = await callerFor(manager).team.invite({
+      email: email("m-small"),
+      role: smallRoleId,
+    });
+    expect(asCustom.businessRoleId).toBe(smallRoleId);
+  });
+
+  it("lets an admin invite someone as admin", async () => {
+    const invitation = await callerFor(admin).team.invite({
+      email: email("a-admin"),
+      role: "admin",
+    });
+    expect(invitation.role).toBe("admin");
+  });
+
+  it("refuses an admin with a deny override inviting a full admin", async () => {
+    const [row] = await db
+      .select({
+        id: schema.businessMember.id,
+        businessId: schema.businessMember.businessId,
+      })
+      .from(schema.businessMember)
+      .where(eq(schema.businessMember.userId, admin));
+    await db.insert(schema.businessMemberPermission).values({
+      businessId: row.businessId,
+      businessMemberId: row.id,
+      permission: "apiKeys.manage",
+      effect: "deny",
+    });
+    try {
+      await expectDenied("denied-admin-invite-admin", () =>
+        callerFor(admin).team.invite({ email: email("da-admin"), role: "admin" }),
+      );
+    } finally {
+      await db
+        .delete(schema.businessMemberPermission)
+        .where(eq(schema.businessMemberPermission.businessMemberId, row.id));
+    }
+  });
+
+  it("refuses a custom-role holder promoting someone above their own set", async () => {
+    // Start the target inside the delegate's set, so only the new role counts.
+    await callerFor(owner).team.setRole({ userId: member, role: smallRoleId });
+    try {
+      await expectDenied("delegate-promote-admin", () =>
+        callerFor(delegate).team.setRole({ userId: member, role: "admin" }),
+      );
+      await expectDenied("delegate-promote-big-custom", () =>
+        callerFor(delegate).team.setRole({ userId: member, role: bigRoleId }),
+      );
+      await expectDenied("delegate-invite-admin", () =>
+        callerFor(delegate).team.invite({ email: email("d-admin"), role: "admin" }),
+      );
+    } finally {
+      await callerFor(owner).team.setRole({ userId: member, role: "member" });
+    }
+  });
+
+  it("lets a custom-role holder move someone within their own set", async () => {
+    await callerFor(owner).team.setRole({ userId: member, role: smallRoleId });
+    try {
+      const res = await callerFor(delegate).team.setRole({
+        userId: member,
+        role: teamViewRoleId,
+      });
+      expect(res).toEqual({ ok: true });
+    } finally {
+      await callerFor(owner).team.setRole({ userId: member, role: "member" });
+    }
+  });
+
+  it("refuses changing the role of someone who holds permissions the actor lacks", async () => {
+    // A member (and an admin) hold far more than the delegate's custom role,
+    // so even a demotion to a role the delegate may hand out is refused.
+    await expectDenied("delegate-demote-member", () =>
+      callerFor(delegate).team.setRole({ userId: member, role: smallRoleId }),
+    );
+    await expectDenied("delegate-demote-admin", () =>
+      callerFor(delegate).team.setRole({ userId: adminTarget, role: smallRoleId }),
+    );
+  });
+
+  it("lets an admin change another admin's role, and an owner anyone's", async () => {
+    expect(
+      await callerFor(admin).team.setRole({ userId: adminTarget, role: "manager" }),
+    ).toEqual({ ok: true });
+    expect(
+      await callerFor(owner).team.setRole({ userId: adminTarget, role: "admin" }),
+    ).toEqual({ ok: true });
+  });
+
+  it("offers only the roles and members the actor may hand out or change", async () => {
+    const asManager = await callerFor(manager).team.list();
+    expect(asManager.assignableRoles).toEqual([
+      "manager",
+      "member",
+      "contractor",
+      "viewer",
+    ]);
+    expect(asManager.assignableCustomRoleIds).toContain(smallRoleId);
+    expect(asManager.assignableCustomRoleIds).not.toContain(bigRoleId);
+    // A manager has no team.manageRoles, so no role pickers on member rows.
+    expect(asManager.roleEditableUserIds).toEqual([]);
+
+    const asDelegate = await callerFor(delegate).team.list();
+    expect(asDelegate.assignableRoles).toEqual([]);
+    expect(asDelegate.assignableCustomRoleIds).toEqual(
+      expect.arrayContaining([smallRoleId, teamViewRoleId]),
+    );
+    expect(asDelegate.assignableCustomRoleIds).not.toContain(bigRoleId);
+    for (const userId of [owner, admin, adminTarget, member, delegate]) {
+      expect(asDelegate.roleEditableUserIds).not.toContain(userId);
+    }
+
+    const asAdmin = await callerFor(admin).team.list();
+    expect(asAdmin.assignableRoles).toContain("admin");
+    expect(asAdmin.assignableRoles).not.toContain("owner");
+    expect(asAdmin.roleEditableUserIds).toContain(adminTarget);
+    expect(asAdmin.roleEditableUserIds).toContain(delegate);
+    expect(asAdmin.roleEditableUserIds).not.toContain(owner);
+    expect(asAdmin.roleEditableUserIds).not.toContain(admin);
+
+    const asOwner = await callerFor(owner).team.list();
+    expect(asOwner.assignableRoles).toContain("owner");
+    expect(asOwner.assignableCustomRoleIds).toContain(bigRoleId);
   });
 });

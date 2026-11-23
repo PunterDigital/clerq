@@ -84,6 +84,8 @@ export function TeamManager({
   canRemove,
   canManageRoles,
   assignableRoles,
+  assignableCustomRoleIds,
+  roleEditableUserIds,
 }: {
   members: Member[];
   invitations: Invitation[];
@@ -94,11 +96,17 @@ export function TeamManager({
   canRemove: boolean;
   canManageRoles: boolean;
   assignableRoles: Role[];
+  assignableCustomRoleIds: string[];
+  roleEditableUserIds: string[];
 }) {
+  const assignable: Assignable = {
+    roles: assignableRoles,
+    customRoleIds: assignableCustomRoleIds,
+  };
   return (
     <div className="flex flex-col gap-6">
       {canInvite ? (
-        <InviteCard assignableRoles={assignableRoles} customRoles={customRoles} />
+        <InviteCard assignable={assignable} customRoles={customRoles} />
       ) : null}
       {canInvite && invitations.length > 0 ? (
         <PendingInvites invitations={invitations} customRoles={customRoles} />
@@ -110,31 +118,40 @@ export function TeamManager({
         currentUserId={currentUserId}
         canRemove={canRemove}
         canManageRoles={canManageRoles}
-        assignableRoles={assignableRoles}
+        assignable={assignable}
+        roleEditableUserIds={roleEditableUserIds}
       />
       {canManageRoles ? <CustomRolesCard customRoles={customRoles} /> : null}
     </div>
   );
 }
 
-// Build the option list for a role <select>: predefined assignable roles plus
-// the business's custom roles. Option values are role keys or custom role ids.
+// The roles the viewer may hand out (the server's `team.list` works this out
+// with the same rule `invite` and `setRole` enforce: only roles whose
+// permissions the viewer holds themselves).
+type Assignable = { roles: Role[]; customRoleIds: string[] };
+
+// Build the option list for a role <select>: the assignable predefined roles
+// plus the assignable custom roles. Option values are role keys or custom role
+// ids. `current` (a member's role) stays selectable so the select shows it.
 function roleOptions(
-  assignableRoles: Role[],
+  assignable: Assignable,
   customRoles: CustomRole[],
-  current: { role: StoredRole; businessRoleId: string | null },
+  current: { role: StoredRole; businessRoleId: string | null } | null,
 ) {
-  const options: { value: string; label: string }[] = assignableRoles.map((r) => ({
+  const options: { value: string; label: string }[] = assignable.roles.map((r) => ({
     value: r,
     label: ROLE_META[r].label,
   }));
-  // Ensure the member's current predefined role is selectable even if not in
-  // the assignable set (e.g. an owner row shown to another owner).
-  if (current.role !== "custom" && !assignableRoles.includes(current.role)) {
+  if (current && current.role !== "custom" && !assignable.roles.includes(current.role)) {
     options.unshift({ value: current.role, label: ROLE_META[current.role].label });
   }
   for (const role of customRoles) {
-    options.push({ value: role.id, label: role.name });
+    const isCurrent =
+      current?.role === "custom" && current.businessRoleId === role.id;
+    if (isCurrent || assignable.customRoleIds.includes(role.id)) {
+      options.push({ value: role.id, label: role.name });
+    }
   }
   return options;
 }
@@ -147,17 +164,18 @@ function currentRoleValue(member: {
 }
 
 function InviteCard({
-  assignableRoles,
+  assignable,
   customRoles,
 }: {
-  assignableRoles: Role[];
+  assignable: Assignable;
   customRoles: CustomRole[];
 }) {
   const router = useRouter();
   const trpc = useTRPC();
   const [email, setEmail] = useState("");
+  const options = roleOptions(assignable, customRoles, null);
   const [inviteRole, setInviteRole] = useState<string>(
-    assignableRoles.includes("member") ? "member" : assignableRoles[0],
+    options.some((o) => o.value === "member") ? "member" : (options[0]?.value ?? ""),
   );
 
   const invite = useMutation(
@@ -169,13 +187,11 @@ function InviteCard({
     }),
   );
 
-  const options = roleOptions(assignableRoles, customRoles, {
-    role: "member",
-    businessRoleId: null,
-  });
-  const description = isRole(inviteRole)
-    ? ROLE_META[inviteRole].description
-    : `Custom role: ${customRoles.find((r) => r.id === inviteRole)?.name ?? ""}`;
+  const description = !inviteRole
+    ? "There is no role you can invite people as: you can only hand out a role whose permissions you all hold yourself."
+    : isRole(inviteRole)
+      ? ROLE_META[inviteRole].description
+      : `Custom role: ${customRoles.find((r) => r.id === inviteRole)?.name ?? ""}`;
 
   return (
     <Card>
@@ -227,7 +243,10 @@ function InviteCard({
             </p>
           ) : null}
           <div>
-            <Button type="submit" disabled={invite.isPending || !email.trim()}>
+            <Button
+              type="submit"
+              disabled={invite.isPending || !email.trim() || !inviteRole}
+            >
               {invite.isPending ? "Creating invite..." : "Create invite"}
             </Button>
           </div>
@@ -317,7 +336,8 @@ function MembersCard({
   currentUserId,
   canRemove,
   canManageRoles,
-  assignableRoles,
+  assignable,
+  roleEditableUserIds,
 }: {
   members: Member[];
   overrides: Override[];
@@ -325,7 +345,8 @@ function MembersCard({
   currentUserId: string;
   canRemove: boolean;
   canManageRoles: boolean;
-  assignableRoles: Role[];
+  assignable: Assignable;
+  roleEditableUserIds: string[];
 }) {
   return (
     <Card>
@@ -348,7 +369,8 @@ function MembersCard({
             isSelf={member.userId === currentUserId}
             canRemove={canRemove}
             canManageRoles={canManageRoles}
-            assignableRoles={assignableRoles}
+            canChangeRole={roleEditableUserIds.includes(member.userId)}
+            assignable={assignable}
           />
         ))}
       </CardContent>
@@ -363,7 +385,8 @@ function MemberRow({
   isSelf,
   canRemove,
   canManageRoles,
-  assignableRoles,
+  canChangeRole,
+  assignable,
 }: {
   member: Member;
   overrides: Override[];
@@ -371,7 +394,10 @@ function MemberRow({
   isSelf: boolean;
   canRemove: boolean;
   canManageRoles: boolean;
-  assignableRoles: Role[];
+  // From the server: false for an owner (unless the viewer is one) and for
+  // anyone holding permissions the viewer lacks.
+  canChangeRole: boolean;
+  assignable: Assignable;
 }) {
   const router = useRouter();
   const trpc = useTRPC();
@@ -386,12 +412,9 @@ function MemberRow({
     trpc.team.setRole.mutationOptions({ onSuccess: () => router.refresh() }),
   );
 
-  const canEditRole =
-    canManageRoles &&
-    !isSelf &&
-    (member.role !== "owner" || assignableRoles.includes("owner"));
+  const canEditRole = canManageRoles && canChangeRole && !isSelf;
   const canEditPermissions = canManageRoles && !isSelf && member.role !== "owner";
-  const options = roleOptions(assignableRoles, customRoles, member);
+  const options = roleOptions(assignable, customRoles, member);
 
   return (
     <div className="rounded-md border">

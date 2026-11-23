@@ -77,7 +77,10 @@ export async function getCustomRole(
   roleId: string,
 ) {
   const [row] = await db
-    .select({ id: schema.businessRole.id })
+    .select({
+      id: schema.businessRole.id,
+      permissions: schema.businessRole.permissions,
+    })
     .from(schema.businessRole)
     .where(
       and(
@@ -85,7 +88,11 @@ export async function getCustomRole(
         eq(schema.businessRole.id, roleId),
       ),
     );
-  return row ?? null;
+  if (!row) return null;
+  return {
+    id: row.id,
+    permissions: sanitizePermissions((row.permissions as string[]) ?? []),
+  };
 }
 
 type CustomRoleResult =

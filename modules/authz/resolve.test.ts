@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyOverrides,
   assignableRoles,
+  holdsAll,
   isPermission,
   isRole,
   PERMISSION_META,
@@ -200,18 +201,62 @@ describe("custom roles", () => {
 });
 
 describe("assignableRoles", () => {
+  const assignableFor = (role: Role) =>
+    assignableRoles(role, permissionsForRole(role));
+
   it("lets only owners assign the owner role", () => {
-    expect(assignableRoles("owner")).toContain("owner");
+    expect(assignableFor("owner")).toContain("owner");
     for (const role of ROLES.filter((r) => r !== "owner") as Role[]) {
-      expect(assignableRoles(role)).not.toContain("owner");
+      expect(assignableFor(role)).not.toContain("owner");
     }
   });
 
   it("never offers a role outside the catalog", () => {
     for (const role of ROLES) {
-      for (const assignable of assignableRoles(role)) {
+      for (const assignable of assignableFor(role)) {
         expect(ROLES).toContain(assignable);
       }
     }
+  });
+
+  // #5582: a manager inviting a second account as admin got every permission.
+  it("only offers roles whose permissions the actor holds", () => {
+    for (const actor of ROLES.filter((r) => r !== "owner") as Role[]) {
+      const held = permissionsForRole(actor);
+      for (const role of assignableFor(actor)) {
+        expect(holdsAll(held, ROLE_PERMISSIONS[role]), `${actor} -> ${role}`).toBe(true);
+      }
+    }
+  });
+
+  it("keeps a manager below admin and accountant", () => {
+    const roles = assignableFor("manager");
+    expect(roles).not.toContain("admin");
+    expect(roles).not.toContain("accountant");
+    expect(roles).toEqual(["manager", "member", "contractor", "viewer"]);
+  });
+
+  it("lets an admin assign admin, but not once a deny override takes something away", () => {
+    expect(assignableFor("admin")).toContain("admin");
+    const denied = resolveEffectivePermissions("admin", [
+      { permission: "apiKeys.manage", effect: "deny" },
+    ]);
+    expect(assignableRoles("admin", denied)).not.toContain("admin");
+    expect(assignableRoles("admin", denied)).toContain("manager");
+  });
+
+  it("follows the actor's permissions, not their role name, for custom roles", () => {
+    const small = new Set<Permission>(["projects.view", "tasks.view", "time.log", "time.viewOwn", "dashboard.view"]);
+    expect(assignableRoles("custom", small)).toEqual(["contractor"]);
+    expect(assignableRoles("custom", new Set())).toEqual([]);
+  });
+});
+
+describe("holdsAll", () => {
+  it("is true only when every permission is held", () => {
+    const held = new Set<Permission>(["clients.view", "time.log"]);
+    expect(holdsAll(held, ["clients.view"])).toBe(true);
+    expect(holdsAll(held, [])).toBe(true);
+    expect(holdsAll(held, ["clients.view", "settings.edit"])).toBe(false);
   });
 });

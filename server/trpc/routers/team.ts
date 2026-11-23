@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getDb } from "@/db";
 import {
   assignableRoles,
+  holdsAll,
   isPermission,
   isRole,
   PERMISSION_SET,
@@ -29,6 +30,7 @@ import {
   revokeInvitation,
   updateCustomRole,
 } from "@/modules/team/service";
+import { getMembershipIn } from "@/server/membership";
 
 import {
   authedProcedure,
@@ -39,29 +41,61 @@ import {
 
 type ResolvedRole = { role: StoredRole; businessRoleId: string | null };
 
+// Who is handing out a role: their role in the business and their resolved
+// permissions (role + overrides).
+type Actor = {
+  businessId: string;
+  businessRole: StoredRole;
+  permissions: ReadonlySet<Permission>;
+};
+
 // Resolve a wire role value (a predefined role key or a custom role id) into a
-// stored role. Enforces the owner-assignment guard for predefined roles and
-// existence for custom roles. Throws FORBIDDEN/NOT_FOUND on failure.
-async function resolveRole(
-  businessId: string,
-  actorRole: StoredRole,
+// stored role the actor may hand out. Used by both `invite` and `setRole` (and
+// so by MCP's invite_team_member, which calls `invite`). Only an owner may
+// assign the owner role, and a non-owner may only assign a role whose
+// permissions they all hold themselves (`holdsAll`, the rule createRole and
+// setPermission already use): otherwise a manager could invite a second
+// account as admin (#5582). Throws FORBIDDEN/NOT_FOUND on failure.
+async function resolveAssignableRole(
+  actor: Actor,
   value: string,
 ): Promise<ResolvedRole> {
   if (isRole(value)) {
-    if (!assignableRoles(actorRole).includes(value)) {
+    if (!assignableRoles(actor.businessRole, actor.permissions).includes(value)) {
       throw new TRPCError({
         code: "FORBIDDEN",
-        message: `You can't assign the ${value} role`,
+        message:
+          value === "owner"
+            ? "Only an owner can assign the owner role"
+            : `You can't assign the ${value} role - it has permissions you don't have yourself`,
       });
     }
     return { role: value, businessRoleId: null };
   }
   // Otherwise it must be one of the business's own custom roles.
-  const custom = await getCustomRole(getDb(), businessId, value);
+  const custom = await getCustomRole(getDb(), actor.businessId, value);
   if (!custom) {
     throw new TRPCError({ code: "NOT_FOUND", message: "No such role" });
   }
+  if (actor.businessRole !== "owner" && !holdsAll(actor.permissions, custom.permissions)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "You can't assign that role - it has permissions you don't have yourself",
+    });
+  }
   return { role: "custom", businessRoleId: custom.id };
+}
+
+// Whether the actor may change this member's role at all. Only an owner may
+// change an owner's role, and a non-owner may only change the role of someone
+// whose current permissions they all hold: a custom role with
+// team.manageRoles can't demote an admin, for example (#5582).
+async function canChangeRoleOf(actor: Actor, userId: string): Promise<boolean> {
+  if (actor.businessRole === "owner") return true;
+  const target = await getMembershipIn(userId, actor.businessId);
+  if (!target) return true; // Not on the team: the caller answers NOT_FOUND.
+  if (target.role === "owner") return false;
+  return holdsAll(actor.permissions, target.permissions);
 }
 
 // Validate a custom role's permission list: every entry must be a real
@@ -115,6 +149,24 @@ export const teamRouter = createTRPCRouter({
       ? await listMemberOverrides(getDb(), ctx.businessId)
       : [];
 
+    // What the pickers may offer: the same rule `invite` and `setRole` enforce.
+    const actor: Actor = ctx;
+    const assignableCustomRoleIds = customRoles
+      .filter(
+        (role) =>
+          ctx.businessRole === "owner" || holdsAll(ctx.permissions, role.permissions),
+      )
+      .map((role) => role.id);
+    const roleEditableUserIds: string[] = [];
+    if (canManageRoles) {
+      for (const member of members) {
+        if (member.userId === ctx.session.user.id) continue;
+        if (await canChangeRoleOf(actor, member.userId)) {
+          roleEditableUserIds.push(member.userId);
+        }
+      }
+    }
+
     return {
       members,
       customRoles,
@@ -125,18 +177,16 @@ export const teamRouter = createTRPCRouter({
       canInvite,
       canRemove: ctx.permissions.has("team.removeMember"),
       canManageRoles,
-      assignableRoles: assignableRoles(ctx.businessRole),
+      assignableRoles: assignableRoles(ctx.businessRole, ctx.permissions),
+      assignableCustomRoleIds,
+      roleEditableUserIds,
     };
   }),
 
   invite: permissionProcedure("team.invite")
     .input(inviteInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const resolved = await resolveRole(
-        ctx.businessId,
-        ctx.businessRole,
-        input.role,
-      );
+      const resolved = await resolveAssignableRole(ctx, input.role);
       const result = await inviteMember(getDb(), ctx.businessId, ctx.session.user.id, {
         email: input.email,
         ...resolved,
@@ -212,12 +262,15 @@ export const teamRouter = createTRPCRouter({
           message: "Only an owner can change an owner's role",
         });
       }
+      if (!(await canChangeRoleOf(ctx, input.userId))) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "You can't change this person's role - they have permissions you don't have yourself",
+        });
+      }
 
-      const resolved = await resolveRole(
-        ctx.businessId,
-        ctx.businessRole,
-        input.role,
-      );
+      const resolved = await resolveAssignableRole(ctx, input.role);
 
       const result =
         resolved.businessRoleId === null
