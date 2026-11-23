@@ -23,6 +23,8 @@ export default async function TeamPage() {
     canRemove,
     canManageRoles,
     assignableRoles,
+    assignableCustomRoleIds,
+    roleEditableUserIds,
   } = await caller.team.list();
 
   return (
@@ -36,6 +38,8 @@ export default async function TeamPage() {
         canRemove={canRemove}
         canManageRoles={canManageRoles}
         assignableRoles={assignableRoles}
+        assignableCustomRoleIds={assignableCustomRoleIds}
+        roleEditableUserIds={roleEditableUserIds}
     />
   );
 }

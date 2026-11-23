@@ -6,6 +6,7 @@
 
 import {
   PERMISSIONS,
+  ROLES,
   type Permission,
   type Role,
   type StoredRole,
@@ -130,11 +131,33 @@ export function permissionsForRole(role: Role): Set<Permission> {
   return new Set(ROLE_PERMISSIONS[role]);
 }
 
-// Predefined roles a member with `actorRole` is allowed to assign. Only an
-// owner may create another owner; everyone else who can manage roles may
-// assign roles at or below admin (and any of the business's custom roles,
-// handled separately by the router). A custom-role actor is never an owner.
-export function assignableRoles(actorRole: StoredRole): Role[] {
-  if (actorRole === "owner") return ["owner", "admin", "manager", "member", "accountant", "contractor", "viewer"];
-  return ["admin", "manager", "member", "accountant", "contractor", "viewer"];
+// The anti-escalation rule for handing out access: a non-owner may only give
+// someone a set of permissions they hold every one of themselves. Granting an
+// override, building a custom role, inviting as a role and setting a role all
+// go through this, so nobody can mint a role above their own (#5582). An owner
+// holds everything, so this always passes for them.
+export function holdsAll(
+  actorPermissions: ReadonlySet<Permission>,
+  permissions: Iterable<Permission>,
+): boolean {
+  for (const permission of permissions) {
+    if (!actorPermissions.has(permission)) return false;
+  }
+  return true;
 }
+
+// Predefined roles a member may assign (invite as, or set). Only an owner may
+// make another owner. Everyone else may assign a role only when they hold all
+// of its permissions themselves (`holdsAll`), so a manager can't hand out admin
+// and an admin with a deny override can't hand out a full admin either. A
+// business's custom roles go through the same `holdsAll` check in the router.
+export function assignableRoles(
+  actorRole: StoredRole,
+  actorPermissions: ReadonlySet<Permission>,
+): Role[] {
+  if (actorRole === "owner") return [...ROLES];
+  return ROLES.filter(
+    (role) => role !== "owner" && holdsAll(actorPermissions, ROLE_PERMISSIONS[role]),
+  );
+}
+
