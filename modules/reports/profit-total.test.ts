@@ -6,6 +6,7 @@ import { createClient } from "@/modules/clients/service";
 import { createProject } from "@/modules/projects/service";
 import { createTask } from "@/modules/projects/tasks-service";
 import { createTestDatabase } from "@/db/testing";
+import { FxRateCache } from "@/modules/billing/fx-cache";
 
 import {
   foldConvertedTotal,
@@ -258,6 +259,40 @@ describe("profitTotalSummary (db)", () => {
     expect(result.unconverted).toEqual([
       { currency: "USD", amountMinor: 10_000, date: "2026-05-15" },
     ]);
+  });
+
+  it("fetches each settled rate once: a second report, and one after a restart, make no requests (#5689)", async () => {
+    const stub = stubRates({
+      "GBP|2026-05-01|EUR": "1.1700",
+      "GBP|2026-06-08|EUR": "1.1734",
+      "USD|2026-05-15|EUR": "0.9200",
+    });
+    let requests = 0;
+    const source = async (request: { date: Date; from: string; to: string }) => {
+      requests++;
+      const result = await stub(request);
+      return result
+        ? { ...result, effectiveDate: request.date.toISOString().slice(0, 10), source: "ecb" as const }
+        : null;
+    };
+    const now = () => new Date("2026-11-24T12:00:00Z");
+    const uncached = await profitTotalSummary(db, businessA.id, {}, { fetchRate: stub });
+
+    const cache = new FxRateCache({ source, now });
+    const first = await profitTotalSummary(db, businessA.id, {}, { rateCache: cache });
+    expect(requests).toBe(3);
+    const second = await profitTotalSummary(db, businessA.id, {}, { rateCache: cache });
+    expect(requests).toBe(3);
+    // A fresh process (new in-memory map) finds them in fx_rate.
+    const afterRestart = await profitTotalSummary(db, businessA.id, {}, {
+      rateCache: new FxRateCache({ source, now }),
+    });
+    expect(requests).toBe(3);
+
+    expect(first).toEqual(uncached);
+    expect(second).toEqual(uncached);
+    expect(afterRestart).toEqual(uncached);
+    await db.delete(schema.fxRate);
   });
 
   it("honours the date range on issue/incurred dates", async () => {

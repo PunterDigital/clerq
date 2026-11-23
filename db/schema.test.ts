@@ -22,6 +22,8 @@ import * as schema from "./schema";
 //   so it already satisfies the rule without an exemption)
 // - impersonation is the platform admins' support audit log, keyed by the
 //   admin and the user they viewed as, not by any business
+// - fx_rate is a cache of public ECB reference rates (#5689), the same for
+//   every business
 const exemptTables = [
   "business",
   "user",
@@ -35,6 +37,7 @@ const exemptTables = [
   "platform_admin",
   "user_suspension",
   "impersonation",
+  "fx_rate",
 ];
 
 const tables = Object.values(schema).filter((value) => is(value, PgTable));

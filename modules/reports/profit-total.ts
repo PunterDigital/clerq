@@ -22,7 +22,7 @@ import { and, eq, gte, isNotNull, lt, notInArray } from "drizzle-orm";
 import type { Db } from "@/db";
 import { schema } from "@/db";
 
-import { fetchEcbRate } from "@/modules/billing/fx";
+import { fxRateCache, rateCacheKey, type FxRateCache } from "@/modules/billing/fx-cache";
 import { convertMinor, lineTotalMinorFromSeconds } from "@/modules/billing/money";
 
 export type DatedRow = { currency: string; amountMinor: number; date: Date };
@@ -116,13 +116,17 @@ export type RateFetcher = (opts: {
 // currency. A rate lookup that fails or comes back unpriced is treated
 // the same as "no rate available": the row surfaces in `unconverted`
 // instead of failing the whole report.
+//
+// Rates come from `rateCache` (default: the process-wide FxRateCache, so a
+// settled day's rate is fetched once, #5689). A test that passes only
+// `fetchRate` gets that function called for every pair, uncached.
 export async function profitTotalSummary(
   db: Db,
   businessId: string,
   range: ProfitTotalRange = {},
-  opts: { fetchRate?: RateFetcher } = {},
+  opts: { fetchRate?: RateFetcher; rateCache?: FxRateCache } = {},
 ): Promise<ConvertedTotal> {
-  const fetchRate = opts.fetchRate ?? fetchEcbRate;
+  const cache = opts.rateCache ?? (opts.fetchRate ? null : fxRateCache);
 
   const [business] = await db
     .select({ currency: schema.business.currency })
@@ -238,17 +242,32 @@ export async function profitTotalSummary(
   }
 
   const rates = new Map<string, string>();
-  await Promise.all(
-    [...pairs.entries()].map(async ([key, { currency, date }]) => {
-      try {
-        const result = await fetchRate({ date, from: currency, to: targetCurrency });
-        if (result) rates.set(key, result.rate);
-      } catch {
-        // Same handling as a 404 from the FX source: the pair stays
-        // unpriced and its rows fall through to `unconverted`.
-      }
-    }),
-  );
+  if (cache) {
+    const cached = await cache.getRates(
+      db,
+      [...pairs.values()].map(({ currency, date }) => ({ date, from: currency, to: targetCurrency })),
+    );
+    for (const [key, { currency, date }] of pairs) {
+      const result = cached.get(
+        rateCacheKey(date.toISOString().slice(0, 10), currency, targetCurrency),
+      );
+      // A pair left out (its lookup failed) or null (no rate) stays unpriced.
+      if (result) rates.set(key, result.rate);
+    }
+  } else {
+    const fetchRate = opts.fetchRate as RateFetcher;
+    await Promise.all(
+      [...pairs.entries()].map(async ([key, { currency, date }]) => {
+        try {
+          const result = await fetchRate({ date, from: currency, to: targetCurrency });
+          if (result) rates.set(key, result.rate);
+        } catch {
+          // Same handling as a 404 from the FX source: the pair stays
+          // unpriced and its rows fall through to `unconverted`.
+        }
+      }),
+    );
+  }
 
   return foldConvertedTotal({ income, expenses, labour }, targetCurrency, rates);
 }
