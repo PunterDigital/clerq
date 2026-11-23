@@ -33,9 +33,11 @@ export async function listInvoices(
   db: Db,
   businessId: string,
   now: Date = new Date(),
-  opts: { search?: string } = {},
+  // limit: only the newest N. skipOverdueRefresh: the caller has just run
+  // refreshOverdue itself (the dashboard, #5695).
+  opts: { search?: string; limit?: number; skipOverdueRefresh?: boolean } = {},
 ) {
-  await refreshOverdue(db, businessId, now);
+  if (!opts.skipOverdueRefresh) await refreshOverdue(db, businessId, now);
   const filters = [eq(schema.invoice.businessId, businessId)];
   // Match on the invoice number or the client it's billed to.
   const term = opts.search?.trim();
@@ -69,7 +71,8 @@ export async function listInvoices(
     .from(schema.invoice)
     .innerJoin(schema.client, eq(schema.invoice.clientId, schema.client.id))
     .where(and(...filters))
-    .orderBy(desc(schema.invoice.createdAt));
+    .orderBy(desc(schema.invoice.createdAt))
+    .limit(opts.limit ?? Number.MAX_SAFE_INTEGER);
 }
 
 export async function getInvoice(
