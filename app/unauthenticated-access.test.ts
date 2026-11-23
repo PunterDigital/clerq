@@ -14,11 +14,10 @@ import { createTestDatabase } from "@/db/testing";
 // real code (PGlite via the getDb() seam, real route handlers, real layouts):
 //
 //   - Pages are gated by their route-group layout, which redirects to /sign-in
-//     when there is no session. This is what stops an anonymous visitor from
-//     viewing an expense's receipt, which is embedded (as a data URL) inside
-//     the gated /expenses/[expenseId] page - there is no separate receipt URL.
-//   - API routes that stream a file (invoice PDF, data export) or speak MCP
-//     answer a cookieless request with 401 rather than a redirect.
+//     when there is no session.
+//   - API routes that stream a file (invoice PDF, an expense's receipt, data
+//     export) or speak MCP answer a cookieless request with 401 rather than a
+//     redirect.
 //
 // A structural pass then proves the two live checks above actually cover the
 // entire app/ tree: every page.tsx and route.ts is classified, so a newly
@@ -146,6 +145,16 @@ describe("file-download routes refuse anonymous requests", () => {
         "http://localhost/api/expenses/receipts?from=2026-07-01T00:00:00Z&to=2026-08-01T00:00:00Z",
       ),
     );
+    expect(res.status).toBe(401);
+    expect(await res.text()).toBe("Sign in first");
+  });
+
+  it("serves no single expense receipt without a session (#5693)", async () => {
+    const { GET } = await import("@/app/api/expenses/[expenseId]/receipt/route");
+    const expenseId = "00000000-0000-4000-8000-000000000000";
+    const res = await GET(new Request(`http://localhost/api/expenses/${expenseId}/receipt`), {
+      params: Promise.resolve({ expenseId }),
+    });
     expect(res.status).toBe(401);
     expect(await res.text()).toBe("Sign in first");
   });
@@ -298,6 +307,7 @@ const PROTECTED_ROUTES = [
   "api/credit-notes/[creditNoteId]/pdf/route.ts",
   "api/credit-notes/[creditNoteId]/einvoice/route.ts",
   "api/expenses/receipts/route.ts",
+  "api/expenses/[expenseId]/receipt/route.ts",
   "api/export/route.ts",
   "api/mcp/route.ts",
   // The recurring-invoice cron trigger: token-guarded, not session-gated. It
@@ -388,16 +398,20 @@ describe("every URL in the app is accounted for", () => {
     expect(unwrapped, `handlers outside apiRoute(): ${unwrapped.join(", ")}`).toEqual([]);
   });
 
-  it("exposes no unaccounted receipt URL - receipts live in the gated expense page or the session-gated zip route", () => {
-    // Receipts are stored as base64 data URLs and rendered client-side inside
-    // /expenses/[expenseId] (a gated page). The one standalone receipt route -
-    // the period zip download - answers anonymous requests with 401 (asserted
-    // live above). Any other receipt-serving route.ts needs its own auth check
-    // and its own test - fail until then.
+  it("exposes no unaccounted receipt URL - receipts come only from the two session-gated routes", () => {
+    // Receipts are stored as base64 data URLs. The gated /expenses/[expenseId]
+    // page shows one through the single-receipt route (#5693), and the period
+    // zip download bundles them; both answer anonymous requests with 401
+    // (asserted live above, permission and tenancy in
+    // modules/expenses/receipt-file.test.ts). Any other receipt-serving
+    // route.ts needs its own auth check and its own test - fail until then.
     const receiptRoutes = filesEndingWith("route.ts").filter((r) =>
       r.toLowerCase().includes("receipt"),
     );
-    expect(receiptRoutes).toEqual(["api/expenses/receipts/route.ts"]);
+    expect(receiptRoutes.sort()).toEqual([
+      "api/expenses/[expenseId]/receipt/route.ts",
+      "api/expenses/receipts/route.ts",
+    ]);
     // And the expense detail page that embeds them is under the gated group.
     const expensePages = filesEndingWith("page.tsx").filter((p) =>
       p.includes("expenses/[expenseId]"),

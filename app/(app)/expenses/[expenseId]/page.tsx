@@ -43,6 +43,9 @@ export default async function ExpenseDetailPage({
   const isImage =
     expense.receiptMimeType === "image/png" ||
     expense.receiptMimeType === "image/jpeg";
+  // The receipt is served by its own route (#5693): the stored data URL (up
+  // to ~2 MB) never goes into this page's HTML or RSC payload.
+  const receiptUrl = `/api/expenses/${expense.id}/receipt`;
 
   return (
     <div className="flex flex-col gap-6">
@@ -130,8 +133,10 @@ export default async function ExpenseDetailPage({
               {isImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={expense.receiptDataUrl}
+                  src={receiptUrl}
                   alt={expense.receiptFilename ?? "Receipt"}
+                  loading="lazy"
+                  decoding="async"
                   className="max-h-96 w-auto rounded-md border object-contain"
                 />
               ) : (
@@ -140,7 +145,7 @@ export default async function ExpenseDetailPage({
                 </div>
               )}
               <ReceiptLinks
-                dataUrl={expense.receiptDataUrl}
+                url={receiptUrl}
                 filename={expense.receiptFilename ?? "receipt"}
               />
             </div>
