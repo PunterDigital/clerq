@@ -174,7 +174,7 @@ A change the status doesn't allow is a 409.
 | `POST /invoices/{id}/void` | Void a sent or overdue invoice, optionally `{ "reason": "..." }`. It keeps its number; its time goes back to unbilled. 409 once the invoice has gone out as an e-invoice (XML downloaded, or a Factur-X PDF) or has a credit note: correct it with a credit note instead |
 | `POST /invoices/{id}/duplicate` | Copy any invoice into a new draft |
 | `GET /invoices/{id}/pdf-link` | `{ "url", "invoiceNumber", "expiresInSeconds" }`: a link that downloads the PDF without a key or login, for 15 minutes. The PDF is PDF/A-3b; with e-invoicing on, an issued invoice that the e-invoice export accepts is also a Factur-X / ZUGFeRD invoice (EN 16931 profile, `factur-x.xml` inside) |
-| `GET /invoices/{id}/einvoice` | The issued invoice as a Peppol BIS Billing 3.0 UBL e-invoice (`application/xml`). Needs e-invoicing on in Settings; 422 lists what to fill in first. Once downloaded, the invoice counts as sent as an e-invoice and can no longer be voided |
+| `GET /invoices/{id}/einvoice` | The issued invoice as a Peppol BIS Billing 3.0 UBL e-invoice (`application/xml`). Needs e-invoicing on in Settings; 422 lists what to fill in first. Once downloaded with a read/write key whose creator may void invoices, the invoice counts as sent as an e-invoice and can no longer be voided; a read-only key gets the XML without marking it |
 
 | `POST /invoices/{id}/credit-notes` | Issue a credit note against a sent, overdue or paid invoice. No body credits everything left; `{ "lines": [{ "invoiceLineId", "amountMajor" }], "reason"? }` credits part. VAT follows the invoice. 409 for a draft, a void invoice or nothing left; 422 for more than a line has left |
 

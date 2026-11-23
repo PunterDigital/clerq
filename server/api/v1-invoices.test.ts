@@ -337,7 +337,16 @@ describe("/api/v1/invoices", () => {
       expect(xml).toContain("<cbc:BuyerReference>PO-9</cbc:BuyerReference>");
       expect(xml).toContain('<cbc:EndpointID schemeID="9930">DE123456789</cbc:EndpointID>');
 
-      // Downloaded = sent as an e-invoice: it can't be voided any more (#5042).
+      // A read-only key downloads without marking it sent (#5583).
+      const [afterRead] = await db
+        .select({ sentAt: schema.invoice.einvoiceSentAt })
+        .from(schema.invoice)
+        .where(eq(schema.invoice.id, invoiceId));
+      expect(afterRead.sentAt).toBeNull();
+
+      // Downloaded with a key that could void it = sent as an e-invoice: it
+      // can't be voided any more (#5042).
+      expect((await get(writeA)).status).toBe(200);
       const { POST: voidIt } = await voidRoute();
       const voided = await call(voidIt, "POST", `/api/v1/invoices/${invoiceId}/void`, writeA, {
         params: { invoiceId },

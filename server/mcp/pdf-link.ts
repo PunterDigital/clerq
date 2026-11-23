@@ -14,6 +14,12 @@ export type InvoicePdfTokenPayload = {
   businessId: string;
   /** Unix epoch seconds after which the token is rejected. */
   exp: number;
+  /**
+   * Whether fetching a PDF that carries Factur-X may mark the invoice as
+   * sent (un-voidable). True only when the minting caller could void it
+   * (#5583); missing in older tokens, which then never mark.
+   */
+  markSent?: boolean;
 };
 
 type SignOptions = {
@@ -51,7 +57,7 @@ function sign(payloadB64: string, secret: string): string {
 }
 
 export function signInvoicePdfToken(
-  input: { invoiceId: string; businessId: string },
+  input: { invoiceId: string; businessId: string; markSent?: boolean },
   opts: SignOptions = {},
 ): string {
   const secret = resolveSecret(opts.secret);
@@ -61,6 +67,7 @@ export function signInvoicePdfToken(
     invoiceId: input.invoiceId,
     businessId: input.businessId,
     exp: Math.floor(nowMs / 1000) + ttl,
+    markSent: input.markSent === true,
   };
   const payloadB64 = base64url(JSON.stringify(payload));
   return `${payloadB64}.${sign(payloadB64, secret)}`;
@@ -99,5 +106,5 @@ export function verifyInvoicePdfToken(
     return null;
   }
   if (Math.floor(nowMs / 1000) >= payload.exp) return null;
-  return payload;
+  return { ...payload, markSent: payload.markSent === true };
 }

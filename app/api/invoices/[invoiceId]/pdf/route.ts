@@ -5,20 +5,24 @@ import { recordEinvoiceSent } from "@/modules/billing/credit-notes";
 import { getInvoice } from "@/modules/billing/lifecycle";
 import { buildInvoicePdfData } from "@/modules/billing/pdf-data";
 import { facturXFor } from "@/modules/einvoice/service";
-import { getEffectiveSession } from "@/server/session";
+import { getBusinessSuspension } from "@/modules/platform/service";
+import {
+  mayRecordEinvoiceSent,
+  resolveDownloadAccess,
+} from "@/server/download-access";
 import { verifyInvoicePdfToken } from "@/server/mcp/pdf-link";
-import { getActiveMembership } from "@/server/membership";
 import { buildInvoicePdf } from "@/server/pdf/invoice-document";
 
 // Resolve the business this request may read, by either auth path:
 //   - a browser session cookie (the download button in the web app), or
 //   - a short-lived signed token minted by the MCP `get_invoice_pdf_link`
 //     tool, scoped to one invoice in one business.
-// Returns the businessId to scope by, or a Response to short-circuit with.
-async function resolveBusinessId(
+// Returns the businessId to scope by and whether this download may mark the
+// invoice sent as an e-invoice (#5583), or a Response to short-circuit with.
+async function resolveAccess(
   req: Request,
   invoiceId: string,
-): Promise<string | Response> {
+): Promise<{ businessId: string; markSent: boolean } | Response> {
   const token = new URL(req.url).searchParams.get("token");
   if (token) {
     const payload = verifyInvoicePdfToken(token);
@@ -27,18 +31,21 @@ async function resolveBusinessId(
     if (!payload || payload.invoiceId !== invoiceId) {
       return new Response("Invalid or expired link", { status: 401 });
     }
-    return payload.businessId;
+    if (await getBusinessSuspension(getDb(), payload.businessId)) {
+      return new Response("This business has been suspended", { status: 403 });
+    }
+    return { businessId: payload.businessId, markSent: payload.markSent === true };
   }
 
-  const session = await getEffectiveSession(req.headers);
-  if (!session) {
-    return new Response("Sign in first", { status: 401 });
+  // The browser session: the same gates as invoices.get.
+  const access = await resolveDownloadAccess(req.headers, "invoices.view");
+  if (access instanceof Response) {
+    return access;
   }
-  const membership = await getActiveMembership(session.user.id);
-  if (!membership) {
-    return new Response("No business", { status: 403 });
-  }
-  return membership.businessId;
+  return {
+    businessId: access.businessId,
+    markSent: mayRecordEinvoiceSent({ ...access, readOnlyKey: false }),
+  };
 }
 
 export async function GET(
@@ -46,11 +53,11 @@ export async function GET(
   { params }: { params: Promise<{ invoiceId: string }> },
 ) {
   const { invoiceId } = await params;
-  const resolved = await resolveBusinessId(req, invoiceId);
+  const resolved = await resolveAccess(req, invoiceId);
   if (resolved instanceof Response) {
     return resolved;
   }
-  const businessId = resolved;
+  const { businessId, markSent } = resolved;
 
   const db = getDb();
   const invoice = await getInvoice(db, businessId, invoiceId);
@@ -105,8 +112,9 @@ export async function GET(
   const facturX =
     invoice.status === "draft" ? null : await facturXFor(db, businessId, invoiceId);
   const pdf = await buildInvoicePdf(data, { facturX });
-  if (facturX) {
-    // A PDF carrying Factur-X is an e-invoice once it leaves (#5042).
+  if (facturX && markSent) {
+    // A PDF carrying Factur-X is an e-invoice once it leaves (#5042), when
+    // the caller could void the invoice (#5583).
     await recordEinvoiceSent(db, businessId, invoiceId);
   }
   const filename = invoice.number

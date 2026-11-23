@@ -45,6 +45,8 @@ import {
   exportEinvoice,
 } from "@/modules/einvoice/service";
 
+import { mayRecordEinvoiceSent } from "@/server/download-access";
+
 import { createTRPCRouter, permissionProcedure } from "../init";
 
 function found<T>(row: T | null): T {
@@ -174,6 +176,25 @@ export const invoicesRouter = createTRPCRouter({
       found(await getInvoice(getDb(), ctx.businessId, input.invoiceId)),
     ),
 
+  // What MCP get_invoice_pdf_link signs into its link: the invoice must be
+  // the caller's (NOT_FOUND otherwise), and markSent says whether fetching
+  // a PDF that carries Factur-X may mark it sent as an e-invoice (#5583).
+  pdfLinkGrant: permissionProcedure("invoices.view")
+    .input(z.object({ invoiceId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const invoice = found(
+        await getInvoice(getDb(), ctx.businessId, input.invoiceId),
+      );
+      return {
+        invoiceNumber: invoice.number,
+        markSent: mayRecordEinvoiceSent({
+          permissions: ctx.permissions,
+          impersonating: Boolean(ctx.impersonation),
+          readOnlyKey: ctx.apiKey?.scope === "read",
+        }),
+      };
+    }),
+
   // The invoice as a Peppol BIS 3.0 UBL e-invoice (#5040): the XML, or the
   // list of what to fill in first (drafts, missing addresses, IDs...).
   // download: the caller hands the XML on (REST, MCP), so the invoice now
@@ -190,7 +211,17 @@ export const invoicesRouter = createTRPCRouter({
       const result = found(
         await exportEinvoice(getDb(), ctx.businessId, input.invoiceId),
       );
-      if (result.ok && input.download) {
+      // Only a caller who could void the invoice may mark it sent (#5583):
+      // anyone else who may read it just gets the XML.
+      if (
+        result.ok &&
+        input.download &&
+        mayRecordEinvoiceSent({
+          permissions: ctx.permissions,
+          impersonating: Boolean(ctx.impersonation),
+          readOnlyKey: ctx.apiKey?.scope === "read",
+        })
+      ) {
         await recordEinvoiceSent(getDb(), ctx.businessId, input.invoiceId);
       }
       return result;
