@@ -232,6 +232,13 @@
       "when": 1795043195407,
       "tag": "0032_peppol_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1795475532568,
+      "tag": "0033_fx_rate",
+      "breakpoints": true
     }
   ]
 }

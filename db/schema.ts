@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigserial,
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -1043,4 +1044,23 @@ export const apiKey = pgTable(
       .defaultNow(),
   },
   (table) => [index("api_key_business_id_idx").on(table.businessId)],
+);
+
+// ECB reference rates already fetched from Frankfurter (modules/billing/fx-cache.ts,
+// #5689). Reference data shared by the whole instance, not business data: a
+// rate for a settled day never changes, so it is fetched once and kept. Keyed
+// by the requested day (Frankfurter answers a weekend with the previous
+// business day, kept in effective_date). The rate stays the decimal literal
+// the API sent, never a float.
+export const fxRate = pgTable(
+  "fx_rate",
+  {
+    rateDate: date("rate_date", { mode: "string" }).notNull(),
+    base: text("base").notNull(),
+    quote: text("quote").notNull(),
+    rate: text("rate").notNull(),
+    effectiveDate: date("effective_date", { mode: "string" }).notNull(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.rateDate, table.base, table.quote] })],
 );
