@@ -2,7 +2,7 @@
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { parsePeppolId } from "@/lib/einvoice-codes";
+import { parsePeppolId } from "@/lib/einvoice-codes-shared";
 import { EAS_SCHEMES } from "@/lib/peppol-eas";
 
 // A Peppol ID as the form holds it: the scheme picked from the Peppol list

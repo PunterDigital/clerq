@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { UNIT_CODES, type UnitCode } from "@/lib/einvoice-codes";
+import { UNIT_CODES, type UnitCode } from "@/lib/einvoice-codes-shared";
 import { useTRPC } from "@/server/trpc/client";
 
 export function InvoiceActions({

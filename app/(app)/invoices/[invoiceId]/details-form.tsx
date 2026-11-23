@@ -18,7 +18,7 @@ import {
   suggestedVatexCode,
   VATEX_CODES,
   type VatexCode,
-} from "@/lib/einvoice-codes";
+} from "@/lib/einvoice-codes-shared";
 import { useTRPC } from "@/server/trpc/client";
 
 // A stored timestamp -> the yyyy-mm-dd a date input expects. Dates are kept at

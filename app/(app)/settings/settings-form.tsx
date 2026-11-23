@@ -23,7 +23,7 @@ import {
   formatIban,
   isValidBic,
   isValidIban,
-} from "@/lib/einvoice-codes";
+} from "@/lib/einvoice-codes-shared";
 import type { CountryOption, PostalAddress } from "@/lib/postal-address";
 import { Button } from "@/components/ui/button";
 import {

@@ -3,13 +3,13 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { PostalAddressInput } from "@/lib/postal-address";
 import {
   suggestPostalAddress,
   type AddressSuggestion,
   type CountryOption,
   type PostalAddress,
-  type PostalAddressInput,
-} from "@/lib/postal-address";
+} from "@/lib/postal-address-shared";
 
 // Editable state of the structured address: plain strings, "" = not set.
 export type PostalAddressDraft = {
