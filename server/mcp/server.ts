@@ -1608,14 +1608,17 @@ export function createClerqMcpServer(opts: ClerqMcpOptions): McpServer {
     ({ invoiceId }) =>
       runTool(async () => {
         // Confirm the invoice exists and belongs to this business (throws
-        // NOT_FOUND otherwise) before minting a link for it.
-        const invoice = await caller.invoices.get({ invoiceId });
-        const token = signInvoicePdfToken({ invoiceId, businessId });
+        // NOT_FOUND otherwise) before minting a link for it. markSent: may
+        // this caller's download mark it sent as an e-invoice (#5583).
+        const { invoiceNumber, markSent } = await caller.invoices.pdfLinkGrant({
+          invoiceId,
+        });
+        const token = signInvoicePdfToken({ invoiceId, businessId, markSent });
         const url = new URL(`/api/invoices/${invoiceId}/pdf`, baseUrl);
         url.searchParams.set("token", token);
         return toolJson({
           url: url.toString(),
-          invoiceNumber: invoice.number,
+          invoiceNumber,
           expiresInSeconds: 15 * 60,
         });
       }),

@@ -65,6 +65,10 @@ function buildFakeCaller(recorded: Recorded[]) {
         number: "2026-0001",
         lines: [],
       })),
+      pdfLinkGrant: rec("invoices.pdfLinkGrant", () => ({
+        invoiceNumber: "2026-0001",
+        markSent: true,
+      })),
     },
     recurring: {
       create: rec("recurring.create", (input: unknown) => ({
@@ -345,7 +349,7 @@ describe("Clerq MCP server", () => {
     const token = url.searchParams.get("token");
     expect(token).toBeTruthy();
     const verified = verifyInvoicePdfToken(token!, { secret: SECRET });
-    expect(verified).toMatchObject({ invoiceId, businessId });
+    expect(verified).toMatchObject({ invoiceId, businessId, markSent: true });
   });
 
   it("mark_expense_paid forwards the paid status to the caller", async () => {

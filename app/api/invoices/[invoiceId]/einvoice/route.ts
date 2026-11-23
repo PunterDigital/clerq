@@ -1,8 +1,10 @@
 import { getDb } from "@/db";
 import { recordEinvoiceSent } from "@/modules/billing/credit-notes";
 import { exportEinvoice } from "@/modules/einvoice/service";
-import { getActiveMembership } from "@/server/membership";
-import { getEffectiveSession } from "@/server/session";
+import {
+  mayRecordEinvoiceSent,
+  resolveDownloadAccess,
+} from "@/server/download-access";
 
 // GET /api/invoices/:invoiceId/einvoice - the "Download e-invoice (XML)"
 // button: the invoice as Peppol BIS 3.0 UBL, for the signed-in user's
@@ -12,15 +14,15 @@ export async function GET(
   { params }: { params: Promise<{ invoiceId: string }> },
 ) {
   const { invoiceId } = await params;
-  const session = await getEffectiveSession(req.headers);
-  if (!session) {
-    return new Response("Sign in first", { status: 401 });
+  // The same gates as invoices.einvoice (#5583).
+  const access = await resolveDownloadAccess(req.headers, "invoices.view");
+  if (access instanceof Response) {
+    return access;
   }
-  const membership = await getActiveMembership(session.user.id);
-  if (!membership) {
-    return new Response("No business", { status: 403 });
+  if (!/^[0-9a-f-]{36}$/i.test(invoiceId)) {
+    return new Response("Not found", { status: 404 });
   }
-  const result = await exportEinvoice(getDb(), membership.businessId, invoiceId);
+  const result = await exportEinvoice(getDb(), access.businessId, invoiceId);
   if (!result) {
     return new Response("Not found", { status: 404 });
   }
@@ -31,8 +33,11 @@ export async function GET(
     );
   }
   // Downloaded = sent as an e-invoice: from now on it is corrected with a
-  // credit note, not voided (#5042).
-  await recordEinvoiceSent(getDb(), membership.businessId, invoiceId);
+  // credit note, not voided (#5042). Only when the caller could void it
+  // (#5583): anyone else who may read the invoice just gets the file.
+  if (mayRecordEinvoiceSent({ ...access, readOnlyKey: false })) {
+    await recordEinvoiceSent(getDb(), access.businessId, invoiceId);
+  }
   return new Response(result.xml, {
     headers: {
       "Content-Type": "application/xml; charset=utf-8",

@@ -7,8 +7,7 @@ import {
   documentFilename,
   facturXForCreditNote,
 } from "@/modules/einvoice/service";
-import { getActiveMembership } from "@/server/membership";
-import { getEffectiveSession } from "@/server/session";
+import { resolveDownloadAccess } from "@/server/download-access";
 import { buildInvoicePdf } from "@/server/pdf/invoice-document";
 
 // GET /api/credit-notes/:creditNoteId/pdf - the "Download PDF" button on a
@@ -20,15 +19,12 @@ export async function GET(
   { params }: { params: Promise<{ creditNoteId: string }> },
 ) {
   const { creditNoteId } = await params;
-  const session = await getEffectiveSession(req.headers);
-  if (!session) {
-    return new Response("Sign in first", { status: 401 });
+  // The same gates as invoices.creditNote (#5583).
+  const access = await resolveDownloadAccess(req.headers, "invoices.view");
+  if (access instanceof Response) {
+    return access;
   }
-  const membership = await getActiveMembership(session.user.id);
-  if (!membership) {
-    return new Response("No business", { status: 403 });
-  }
-  const businessId = membership.businessId;
+  const businessId = access.businessId;
   const db = getDb();
   // Not a uuid: no such credit note (Postgres would refuse the cast).
   if (!/^[0-9a-f-]{36}$/i.test(creditNoteId)) {

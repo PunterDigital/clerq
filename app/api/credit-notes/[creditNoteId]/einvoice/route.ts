@@ -1,7 +1,6 @@
 import { getDb } from "@/db";
 import { exportCreditNoteEinvoice } from "@/modules/einvoice/service";
-import { getActiveMembership } from "@/server/membership";
-import { getEffectiveSession } from "@/server/session";
+import { resolveDownloadAccess } from "@/server/download-access";
 
 // GET /api/credit-notes/:creditNoteId/einvoice - the "Download e-invoice
 // (XML)" button on a credit note (#5042): a Peppol BIS 3.0 UBL CreditNote
@@ -11,20 +10,17 @@ export async function GET(
   { params }: { params: Promise<{ creditNoteId: string }> },
 ) {
   const { creditNoteId } = await params;
-  const session = await getEffectiveSession(req.headers);
-  if (!session) {
-    return new Response("Sign in first", { status: 401 });
-  }
-  const membership = await getActiveMembership(session.user.id);
-  if (!membership) {
-    return new Response("No business", { status: 403 });
+  // The same gates as invoices.creditNote (#5583).
+  const access = await resolveDownloadAccess(req.headers, "invoices.view");
+  if (access instanceof Response) {
+    return access;
   }
   if (!/^[0-9a-f-]{36}$/i.test(creditNoteId)) {
     return new Response("Not found", { status: 404 });
   }
   const result = await exportCreditNoteEinvoice(
     getDb(),
-    membership.businessId,
+    access.businessId,
     creditNoteId,
   );
   if (!result) {

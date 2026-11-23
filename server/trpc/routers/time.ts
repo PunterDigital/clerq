@@ -13,6 +13,7 @@ import {
   stopTimer,
   updateEntryNote,
 } from "@/modules/time/service";
+import { hideInternalCost, hideInternalCostOrNull } from "@/modules/time/visibility";
 
 import { createTRPCRouter, permissionProcedure } from "../init";
 
@@ -31,30 +32,42 @@ export const timeRouter = createTRPCRouter({
   start: permissionProcedure("time.log")
     .input(z.object({ taskId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) =>
-      found(
-        await startTimer(getDb(), ctx.businessId, ctx.session.user.id, input.taskId),
+      hideInternalCost(
+        found(
+          await startTimer(getDb(), ctx.businessId, ctx.session.user.id, input.taskId),
+        ),
+        ctx.permissions,
       ),
     ),
 
   // Stopping when nothing runs is a no-op, not an error - the timer may
   // have been stopped from another tab.
-  stop: permissionProcedure("time.log").mutation(({ ctx }) =>
-    stopTimer(getDb(), ctx.businessId, ctx.session.user.id),
+  stop: permissionProcedure("time.log").mutation(async ({ ctx }) =>
+    hideInternalCostOrNull(
+      await stopTimer(getDb(), ctx.businessId, ctx.session.user.id),
+      ctx.permissions,
+    ),
   ),
 
   logManual: permissionProcedure("time.log")
     .input(manualEntrySchema)
     .mutation(async ({ ctx, input }) =>
-      found(
-        await logManualEntry(getDb(), ctx.businessId, ctx.session.user.id, input),
+      hideInternalCost(
+        found(
+          await logManualEntry(getDb(), ctx.businessId, ctx.session.user.id, input),
+        ),
+        ctx.permissions,
       ),
     ),
 
   // Entries for a task span the whole team, so this needs the view-all grant.
+  // Their internal cost only goes to callers who may view profit (#5583).
   listForTask: permissionProcedure("time.viewAll")
     .input(z.object({ taskId: z.string().uuid() }))
-    .query(({ ctx, input }) =>
-      listEntriesForTask(getDb(), ctx.businessId, input.taskId),
+    .query(async ({ ctx, input }) =>
+      (await listEntriesForTask(getDb(), ctx.businessId, input.taskId)).map(
+        (entry) => hideInternalCost(entry, ctx.permissions),
+      ),
     ),
 
   // The caller's own timesheet window. [from, to) in UTC.
@@ -78,14 +91,20 @@ export const timeRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) =>
-      found(
-        await updateEntryNote(getDb(), ctx.businessId, input.entryId, input.note),
+      hideInternalCost(
+        found(
+          await updateEntryNote(getDb(), ctx.businessId, input.entryId, input.note),
+        ),
+        ctx.permissions,
       ),
     ),
 
   deleteEntry: permissionProcedure("time.delete")
     .input(z.object({ entryId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) =>
-      found(await deleteEntry(getDb(), ctx.businessId, input.entryId)),
+      hideInternalCost(
+        found(await deleteEntry(getDb(), ctx.businessId, input.entryId)),
+        ctx.permissions,
+      ),
     ),
 });

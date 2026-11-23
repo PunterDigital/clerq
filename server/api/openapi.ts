@@ -435,7 +435,7 @@ export const API_OPERATIONS: ApiOperation[] = [
     tag: "Invoices",
     summary: "The invoice as an e-invoice (XML)",
     description:
-      "An issued invoice as a UBL 2.1 e-invoice in the Peppol BIS Billing 3.0 format (application/xml). Needs e-invoicing on in Settings. 422 lists what to fill in first. Once downloaded, the invoice can no longer be voided.",
+      "An issued invoice as a UBL 2.1 e-invoice in the Peppol BIS Billing 3.0 format (application/xml). Needs e-invoicing on in Settings. 422 lists what to fill in first. Once downloaded with a read/write key whose creator may void invoices, the invoice can no longer be voided; a read-only key gets the XML without marking it.",
   },
   {
     method: "post",
