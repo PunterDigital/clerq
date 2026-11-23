@@ -1,7 +1,5 @@
-import { headers } from "next/headers";
 
-import { getEffectiveSession } from "@/server/session";
-import { getActiveMembership } from "@/server/membership";
+import { getRequestMembership, getRequestSession } from "@/server/request-scope";
 import { caller } from "@/server/trpc/server";
 
 import { SettingsTabs, type SettingsTab } from "./settings-tabs";
@@ -14,9 +12,9 @@ export default async function SettingsLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getEffectiveSession(await headers());
+  const session = await getRequestSession();
   const membership = session
-    ? await getActiveMembership(session.user.id)
+    ? await getRequestMembership(session.user.id)
     : null;
 
   // The System tab only exists on self-hosted deployments for callers who can

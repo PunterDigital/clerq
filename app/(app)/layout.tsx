@@ -1,4 +1,3 @@
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { ImpersonationBanner } from "@/components/app-shell/impersonation-banner";
@@ -6,13 +5,13 @@ import { Sidebar } from "@/components/app-shell/sidebar";
 import { Topbar } from "@/components/app-shell/topbar";
 import { UpdateBanner } from "@/components/app-shell/update-banner";
 import { getDb } from "@/db";
+import { isPlatformAdmin } from "@/modules/platform/service";
 import {
-  getBusinessSuspension,
-  getUserSuspension,
-  isPlatformAdmin,
-} from "@/modules/platform/service";
-import { getEffectiveSession } from "@/server/session";
-import { getActiveMembership } from "@/server/membership";
+  getRequestBusinessSuspension,
+  getRequestMembership,
+  getRequestSession,
+  getRequestUserSuspension,
+} from "@/server/request-scope";
 import { caller } from "@/server/trpc/server";
 
 import { SuspendedNotice } from "./suspended-notice";
@@ -27,7 +26,7 @@ export const dynamic = "force-dynamic";
 export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const session = await getEffectiveSession(await headers());
+  const session = await getRequestSession();
   if (!session) {
     redirect("/sign-in");
   }
@@ -45,7 +44,7 @@ export default async function AppLayout({
     />
   ) : null;
 
-  const userSuspension = await getUserSuspension(getDb(), session.user.id);
+  const userSuspension = await getRequestUserSuspension(session.user.id);
   if (userSuspension) {
     return (
       <>
@@ -55,12 +54,12 @@ export default async function AppLayout({
     );
   }
 
-  const membership = await getActiveMembership(session.user.id);
+  const membership = await getRequestMembership(session.user.id);
   if (!membership) {
     redirect("/onboarding");
   }
 
-  const businessSuspension = await getBusinessSuspension(getDb(), membership.businessId);
+  const businessSuspension = await getRequestBusinessSuspension(membership.businessId);
   if (businessSuspension) {
     return (
       <>

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -10,8 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getEffectiveSession } from "@/server/session";
-import { getActiveMembership } from "@/server/membership";
+import { getRequestMembership, getRequestSession } from "@/server/request-scope";
 
 export const metadata: Metadata = {
   title: "Data - Clerq",
@@ -22,9 +20,9 @@ export const dynamic = "force-dynamic";
 export default async function DataSettingsPage() {
   // Exporting the whole business is a high-trust action (owner/admin only),
   // so the card is shown only to callers who actually hold the permission.
-  const session = await getEffectiveSession(await headers());
+  const session = await getRequestSession();
   const membership = session
-    ? await getActiveMembership(session.user.id)
+    ? await getRequestMembership(session.user.id)
     : null;
   const canExport = membership?.permissions.has("data.export") ?? false;
 
