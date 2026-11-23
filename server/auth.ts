@@ -1,8 +1,23 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { createAuthMiddleware } from "better-auth/api";
 import { mcp } from "better-auth/plugins";
 
 import { getDb, schema } from "@/db";
+
+// Better Auth's MCP authorize endpoint only shows the consent page when the
+// request itself asks for it (prompt=consent). Without it, a signed-in user
+// is sent straight back to the client's redirect URI with an authorization
+// code - and anyone can register a client with any redirect URI. So one
+// crafted link handed the attacker an MCP token for the victim's business
+// (#5579). Every authorize request is treated as prompt=consent: the code
+// only leaves through /oauth/consent, after the user clicks Authorize. The
+// query is also what the plugin saves for the after-sign-in resume, so a
+// signed-out user lands on the consent page too.
+export const forceMcpConsent = createAuthMiddleware(async (ctx) => {
+  if (ctx.path !== "/mcp/authorize") return;
+  return { context: { query: { ...ctx.query, prompt: "consent" } } };
+});
 
 function createAuth() {
   const googleClientId = process.env.GOOGLE_CLIENT_ID;
@@ -13,6 +28,7 @@ function createAuth() {
     emailAndPassword: {
       enabled: true,
     },
+    hooks: { before: forceMcpConsent },
     plugins: [
       // Turns this instance into an OAuth 2.1 authorization server for the
       // MCP integration: discovery, dynamic client registration, the consent

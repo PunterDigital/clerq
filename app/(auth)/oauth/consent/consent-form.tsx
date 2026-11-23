@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import type { ConsentRequest } from "@/server/mcp/consent-request";
+
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -27,13 +29,11 @@ function humaniseScope(scope: string): string {
 }
 
 export function ConsentForm({
-  clientId,
-  clientName,
+  request,
   scope,
   consentCode,
 }: {
-  clientId: string | null;
-  clientName: string | null;
+  request: ConsentRequest | null;
   scope: string | null;
   consentCode: string | null;
 }) {
@@ -68,15 +68,29 @@ export function ConsentForm({
     }
   }
 
-  const appName = clientName ?? clientId ?? "An application";
+  if (!request || !consentCode) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>This request has expired</CardTitle>
+          <CardDescription>
+            Nothing was connected. Start connecting again from the app you
+            want to use with Clerq.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Authorize access</CardTitle>
         <CardDescription>
-          <span className="font-medium text-foreground">{appName}</span> wants
-          to connect to your Clerq account.
+          <span className="font-medium text-foreground">
+            {request.clientName}
+          </span>{" "}
+          wants to connect to your Clerq account.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -91,6 +105,13 @@ export function ConsentForm({
             invoices.
           </p>
         )}
+        <p className="text-sm text-muted-foreground" data-testid="consent-redirect">
+          After you authorize, you go back to{" "}
+          <span className="font-medium text-foreground">
+            {request.redirectHost}
+          </span>
+          . Only authorize it if you started connecting this app yourself.
+        </p>
         {error ? (
           <p role="alert" className="text-sm text-destructive">
             {error}
