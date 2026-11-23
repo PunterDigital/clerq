@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { getEffectiveSession } from "@/server/session";
-import { getActiveMembership } from "@/server/membership";
+import { getRequestMembership, getRequestSession } from "@/server/request-scope";
 import { caller } from "@/server/trpc/server";
 
 import { SystemAdminForm } from "../system-admin-form";
@@ -15,9 +13,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function SystemSettingsPage() {
-  const session = await getEffectiveSession(await headers());
+  const session = await getRequestSession();
   const membership = session
-    ? await getActiveMembership(session.user.id)
+    ? await getRequestMembership(session.user.id)
     : null;
   const canManageUpdates =
     membership?.permissions.has("settings.manageUpdates") ?? false;

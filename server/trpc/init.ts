@@ -8,11 +8,16 @@ import {
   getBusinessSuspension,
   getUserSuspension,
   isPlatformAdmin,
+  type Suspension,
 } from "@/modules/platform/service";
 import type { ActiveImpersonation } from "@/modules/platform/impersonation";
 import type { Session } from "@/server/auth";
-import { getActiveMembership, getMembershipIn } from "@/server/membership";
-import { getEffectiveSession } from "@/server/session";
+import {
+  getActiveMembership,
+  getMembershipIn,
+  type ActiveMembership,
+} from "@/server/membership";
+import { getEffectiveSession, type AppSession } from "@/server/session";
 
 import { publicErrorMessage } from "./errors";
 
@@ -37,18 +42,45 @@ export type TRPCContext = {
   // Set while a platform admin is viewing the app as session.user (see
   // modules/platform/impersonation.ts). Every mutation is refused then.
   impersonation?: ActiveImpersonation;
+  // How the middleware below reads suspensions and the active membership.
+  // Left out (the /api/trpc route, API keys, MCP), each procedure call
+  // queries the database. The RSC caller passes request-scoped, memoized
+  // ones (server/request-scope.ts), so one page render checks once (#5694).
+  loaders?: AuthLoaders;
+};
+
+export type AuthLoaders = {
+  userSuspension: (userId: string) => Promise<Suspension | null>;
+  activeMembership: (userId: string) => Promise<ActiveMembership | null>;
+  businessSuspension: (businessId: string) => Promise<Suspension | null>;
+};
+
+const databaseLoaders: AuthLoaders = {
+  userSuspension: (userId) => getUserSuspension(getDb(), userId),
+  activeMembership: (userId) => getActiveMembership(userId),
+  businessSuspension: (businessId) => getBusinessSuspension(getDb(), businessId),
 };
 
 export const createTRPCContext = async (opts: {
   headers: Headers;
 }): Promise<TRPCContext> => {
-  const effective = await getEffectiveSession(opts.headers);
-  if (!effective) return { headers: opts.headers, session: null };
-  const { impersonation, ...session } = effective;
-  return impersonation
-    ? { headers: opts.headers, session, impersonation }
-    : { headers: opts.headers, session };
+  return contextFromSession(opts.headers, await getEffectiveSession(opts.headers));
 };
+
+// The context for an already-resolved session (the RSC caller resolves it
+// once per request and shares it with the layout).
+export function contextFromSession(
+  headers: Headers,
+  effective: AppSession | null,
+  loaders?: AuthLoaders,
+): TRPCContext {
+  const base: TRPCContext = loaders
+    ? { headers, session: null, loaders }
+    : { headers, session: null };
+  if (!effective) return base;
+  const { impersonation, ...session } = effective;
+  return impersonation ? { ...base, session, impersonation } : { ...base, session };
+}
 
 const t = initTRPC.context<TRPCContext>().create({
   transformer: superjson,
@@ -89,7 +121,8 @@ const sessionProcedure = publicProcedure.use(async ({ ctx, next, type }) => {
   }
   // A moderation suspension is the lowest gate, below even tenancy: a
   // suspended account can't act anywhere, not even to accept a fresh invite.
-  const suspension = await getUserSuspension(getDb(), ctx.session.user.id);
+  const loaders = ctx.loaders ?? databaseLoaders;
+  const suspension = await loaders.userSuspension(ctx.session.user.id);
   if (suspension) {
     throw new TRPCError({
       code: "FORBIDDEN",
@@ -132,16 +165,17 @@ export const authedProcedure = sessionProcedure.use(({ ctx, next }) => {
 // pointer), falling back to their oldest membership - see getActiveMembership.
 // An API key instead always resolves to the business it was made in.
 export const businessProcedure = sessionProcedure.use(async ({ ctx, next }) => {
+  const loaders = ctx.loaders ?? databaseLoaders;
   const active = ctx.apiKey
     ? await getMembershipIn(ctx.session.user.id, ctx.apiKey.businessId)
-    : await getActiveMembership(ctx.session.user.id);
+    : await loaders.activeMembership(ctx.session.user.id);
   if (!active) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Create a business first",
     });
   }
-  const businessSuspension = await getBusinessSuspension(getDb(), active.businessId);
+  const businessSuspension = await loaders.businessSuspension(active.businessId);
   if (businessSuspension) {
     throw new TRPCError({
       code: "FORBIDDEN",

@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { isReceiptScanConfigured } from "@/modules/expenses/ocr";
-import { getEffectiveSession } from "@/server/session";
-import { getActiveMembership } from "@/server/membership";
+import { getRequestMembership, getRequestSession } from "@/server/request-scope";
 import { caller } from "@/server/trpc/server";
 
 import { BulkUpload } from "./bulk-upload";
@@ -19,9 +17,9 @@ export const dynamic = "force-dynamic";
 
 export default async function BulkUploadPage() {
   const business = await caller.business.current();
-  const session = await getEffectiveSession(await headers());
+  const session = await getRequestSession();
   const membership = session
-    ? await getActiveMembership(session.user.id)
+    ? await getRequestMembership(session.user.id)
     : null;
   const canCreate = membership?.permissions.has("expenses.create") ?? false;
   // Marking paid is its own permission (the detail page's "Mark paid" button).

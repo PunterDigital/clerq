@@ -11,8 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { publicOrigin } from "@/server/api/openapi";
-import { getEffectiveSession } from "@/server/session";
-import { getActiveMembership } from "@/server/membership";
+import { getRequestMembership, getRequestSession } from "@/server/request-scope";
 import { caller } from "@/server/trpc/server";
 
 import { ApiKeysManager } from "./api-keys-manager";
@@ -26,9 +25,9 @@ export const dynamic = "force-dynamic";
 export default async function ApiSettingsPage() {
   // A key acts as its creator for whoever holds it, so the page is shown only
   // to callers who may manage keys (owners and admins by default).
-  const session = await getEffectiveSession(await headers());
+  const session = await getRequestSession();
   const membership = session
-    ? await getActiveMembership(session.user.id)
+    ? await getRequestMembership(session.user.id)
     : null;
   if (!membership?.permissions.has("apiKeys.manage")) {
     return (

@@ -1,11 +1,10 @@
 import { Clock, FolderKanban, ReceiptText, Timer } from "lucide-react";
-import { headers } from "next/headers";
 import Link from "next/link";
 
 import { InvoiceStatusPill } from "@/components/status-pill";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDateTime, formatMinutes, formatMoney } from "@/lib/format";
-import { getEffectiveSession } from "@/server/session";
+import { getRequestSession } from "@/server/request-scope";
 import { caller } from "@/server/trpc/server";
 
 // Per-request: session check + DB lookups, never prerenderable.
@@ -58,7 +57,7 @@ function StatCard({
 }
 
 export default async function DashboardPage() {
-  const session = await getEffectiveSession(await headers());
+  const session = await getRequestSession();
   const summary = await caller.dashboard.summary();
   const firstName = session?.user.name.split(" ")[0] ?? "there";
 

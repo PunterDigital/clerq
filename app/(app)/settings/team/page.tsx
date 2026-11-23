@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 
-import { getEffectiveSession } from "@/server/session";
+import { getRequestSession } from "@/server/request-scope";
 import { caller } from "@/server/trpc/server";
 
 import { TeamManager } from "./team-manager";
@@ -13,7 +12,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function TeamPage() {
-  const session = await getEffectiveSession(await headers());
+  const session = await getRequestSession();
   const {
     members,
     invitations,
