@@ -3,6 +3,7 @@ import { withMcpAuth } from "better-auth/plugins";
 
 import { getDb } from "@/db";
 import { bearerToken, looksLikeApiKey, verifyApiKey } from "@/server/api-keys";
+import { takeRateLimit } from "@/server/api/v1";
 import { getAuth } from "@/server/auth";
 import {
   createClerqCaller,
@@ -31,6 +32,14 @@ async function handle(req: Request): Promise<Response> {
       return Response.json(
         { error: "invalid_key", message: "This API key is not valid or has been revoked." },
         { status: 401 },
+      );
+    }
+    // The same per-key budget as the REST API (#5584): both share one window.
+    const limit = takeRateLimit(key.id);
+    if (!limit.ok) {
+      return Response.json(
+        { error: "rate_limited", message: "Too many requests for this API key, slow down." },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } },
       );
     }
     const membership = await getMembershipIn(key.userId, key.businessId);

@@ -385,7 +385,9 @@ export async function removeMember(
         role: schema.businessMember.role,
       })
       .from(schema.businessMember)
-      .where(eq(schema.businessMember.businessId, businessId));
+      .where(eq(schema.businessMember.businessId, businessId))
+      // Locked: two concurrent changes can't both pass the last-owner check (#5584).
+      .for("update");
 
     const target = rows.find((r) => r.userId === targetUserId);
     if (!target) return { ok: false, reason: "not_member" };
@@ -427,7 +429,9 @@ export async function setMemberRole(
         role: schema.businessMember.role,
       })
       .from(schema.businessMember)
-      .where(eq(schema.businessMember.businessId, businessId));
+      .where(eq(schema.businessMember.businessId, businessId))
+      // Locked: two concurrent changes can't both pass the last-owner check (#5584).
+      .for("update");
 
     const target = rows.find((r) => r.userId === targetUserId);
     if (!target) return { ok: false, reason: "not_member" };
@@ -484,7 +488,9 @@ export async function setMemberCustomRole(
         role: schema.businessMember.role,
       })
       .from(schema.businessMember)
-      .where(eq(schema.businessMember.businessId, businessId));
+      .where(eq(schema.businessMember.businessId, businessId))
+      // Locked: two concurrent changes can't both pass the last-owner check (#5584).
+      .for("update");
 
     const target = rows.find((r) => r.userId === targetUserId);
     if (!target) return { ok: false, reason: "not_member" };

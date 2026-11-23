@@ -14,6 +14,8 @@ import type { Session } from "@/server/auth";
 import { getActiveMembership, getMembershipIn } from "@/server/membership";
 import { getEffectiveSession } from "@/server/session";
 
+import { publicErrorMessage } from "./errors";
+
 function suspensionMessage(scope: "account" | "business", reason: string | null): string {
   const subject = scope === "account" ? "Your account" : "This business";
   return reason ? `${subject} has been suspended: ${reason}` : `${subject} has been suspended`;
@@ -56,6 +58,11 @@ const t = initTRPC.context<TRPCContext>().create({
   // Surface the first issue's human-readable message instead, and expose the
   // structured issues under `data.zodError` for forms that want field detail.
   errorFormatter({ shape, error }) {
+    // A database error's text (SQL, params) never reaches the client (#5584).
+    const message = publicErrorMessage(error);
+    if (message !== error.message) {
+      return { ...shape, message };
+    }
     if (error.cause instanceof ZodError) {
       const [firstIssue] = error.cause.issues;
       if (firstIssue) {

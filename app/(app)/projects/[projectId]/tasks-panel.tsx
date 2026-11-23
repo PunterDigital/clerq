@@ -748,6 +748,11 @@ function TimeSection({ taskId }: { taskId: string }) {
           {log.error.message}
         </p>
       ) : null}
+      {remove.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {remove.error.message}
+        </p>
+      ) : null}
     </div>
   );
 }

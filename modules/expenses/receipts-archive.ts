@@ -68,7 +68,18 @@ export function receiptEntryName(
   return name;
 }
 
-function csvCell(value: string): string {
+// A cell starting with = + - @ (or a tab / CR) is run as a formula by
+// Excel and friends: prefix it with ' so it stays text (#5584). Plain
+// numbers (a negative amount) are left alone.
+function defuseFormula(value: string): string {
+  if (/^[=+\-@\t\r]/.test(value) && !/^-?\d+(\.\d+)?$/.test(value)) {
+    return `'${value}`;
+  }
+  return value;
+}
+
+function csvCell(raw: string): string {
+  const value = defuseFormula(raw);
   return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 

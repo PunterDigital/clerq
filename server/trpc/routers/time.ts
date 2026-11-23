@@ -15,7 +15,7 @@ import {
 } from "@/modules/time/service";
 import { hideInternalCost, hideInternalCostOrNull } from "@/modules/time/visibility";
 
-import { createTRPCRouter, permissionProcedure } from "../init";
+import { createTRPCRouter, permissionProcedure, requirePermission } from "../init";
 
 function found<T>(row: T | null): T {
   if (!row) {
@@ -49,16 +49,22 @@ export const timeRouter = createTRPCRouter({
     ),
   ),
 
+  // A manual rate override bills the client at a figure the caller picks,
+  // so it needs the rates permission (#5584); without one the usual
+  // member / project / client rate applies.
   logManual: permissionProcedure("time.log")
     .input(manualEntrySchema)
-    .mutation(async ({ ctx, input }) =>
-      hideInternalCost(
+    .mutation(async ({ ctx, input }) => {
+      if (input.rateMinor != null) {
+        requirePermission(ctx.permissions, "clients.manageRates");
+      }
+      return hideInternalCost(
         found(
           await logManualEntry(getDb(), ctx.businessId, ctx.session.user.id, input),
         ),
         ctx.permissions,
-      ),
-    ),
+      );
+    }),
 
   // Entries for a task span the whole team, so this needs the view-all grant.
   // Their internal cost only goes to callers who may view profit (#5583).
@@ -99,12 +105,21 @@ export const timeRouter = createTRPCRouter({
       ),
     ),
 
+  // Someone else's entry needs the view-all grant too (#5584); without it
+  // the entry looks missing. Billed time can't be deleted.
   deleteEntry: permissionProcedure("time.delete")
     .input(z.object({ entryId: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) =>
-      hideInternalCost(
-        found(await deleteEntry(getDb(), ctx.businessId, input.entryId)),
-        ctx.permissions,
-      ),
-    ),
+    .mutation(async ({ ctx, input }) => {
+      const result = await deleteEntry(getDb(), ctx.businessId, input.entryId, {
+        ownerId: ctx.permissions.has("time.viewAll") ? undefined : ctx.session.user.id,
+      });
+      if (result === "billed") {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            "This time is billed on an invoice. Remove it from the invoice first, then delete it.",
+        });
+      }
+      return hideInternalCost(found(result), ctx.permissions);
+    }),
 });

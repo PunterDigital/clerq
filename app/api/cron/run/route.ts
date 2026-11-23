@@ -1,3 +1,5 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+
 import { getDb } from "@/db";
 import { runDueSchedules } from "@/modules/billing/recurring";
 
@@ -13,12 +15,18 @@ import { runDueSchedules } from "@/modules/billing/recurring";
 // Disabled with a 404 until CLERQ_CRON_TOKEN is set, so it is never an open
 // endpoint on a default install.
 
+// Constant-time (#5584): hash both sides so the lengths always match.
+function tokenMatches(header: string | null, token: string): boolean {
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  return timingSafeEqual(digest(header ?? ""), digest(`Bearer ${token}`));
+}
+
 export async function POST(req: Request): Promise<Response> {
   const token = process.env.CLERQ_CRON_TOKEN;
   if (!token) {
     return new Response("Not found", { status: 404 });
   }
-  if (req.headers.get("authorization") !== `Bearer ${token}`) {
+  if (!tokenMatches(req.headers.get("authorization"), token)) {
     return new Response("Unauthorized", { status: 401 });
   }
   const summary = await runDueSchedules(getDb());

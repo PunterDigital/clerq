@@ -681,7 +681,10 @@ export async function updateInvoiceLine(
           eq(schema.invoiceLine.businessId, businessId),
           eq(schema.invoiceLine.id, input.lineId),
         ),
-      );
+      )
+      // Lock the invoice like issueInvoice does, so the draft check below
+      // can't race an issue (#5584).
+      .for("update", { of: schema.invoice });
     if (!line || line.status !== "draft") {
       return { ok: false as const, reason: "no_draft" as const };
     }
@@ -771,7 +774,9 @@ export async function deleteInvoiceLine(
           eq(schema.invoiceLine.businessId, businessId),
           eq(schema.invoiceLine.id, lineId),
         ),
-      );
+      )
+      // Lock the invoice like issueInvoice does (#5584).
+      .for("update", { of: schema.invoice });
     if (!line || line.status !== "draft") {
       return null;
     }
