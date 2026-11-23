@@ -1,6 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
+import { publicErrorMessage } from "@/server/trpc/errors";
+
 // How the tool layer speaks back to the model. Successful tool calls return
 // the procedure's data as pretty JSON; failures come back as a readable
 // `isError` result rather than throwing, so the model sees the reason and can
@@ -34,12 +36,17 @@ const CODE_PREFIX: Record<string, string> = {
   CONFLICT: "Conflict",
 };
 
+// A database error's text (SQL, params) is never handed to the model (#5584).
 export function describeError(error: unknown): string {
+  const message = publicErrorMessage(error);
+  if (message !== (error as { message?: unknown } | null)?.message) {
+    console.error(error);
+  }
   if (error instanceof TRPCError) {
     const label = CODE_PREFIX[error.code] ?? error.code;
-    return `${label}: ${error.message}`;
+    return `${label}: ${message}`;
   }
-  if (error instanceof Error) return error.message;
+  if (error instanceof Error) return message;
   return "Unexpected error";
 }
 

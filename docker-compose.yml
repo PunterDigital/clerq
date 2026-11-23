@@ -41,7 +41,9 @@ services:
       - "${APP_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-clerq}:${POSTGRES_PASSWORD:-clerq}@postgres:5432/${POSTGRES_DB:-clerq}
-      # Change this before exposing the instance anywhere - see .env.example
+      # Change this before exposing the instance anywhere - see .env.example.
+      # The app refuses to start with this default unless BETTER_AUTH_URL is
+      # a localhost URL.
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-clerq-dev-secret-change-me}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}

@@ -407,15 +407,34 @@ export async function updateEntryNote(
   return updated ?? null;
 }
 
-export async function deleteEntry(db: Db, businessId: string, entryId: string) {
-  const [deleted] = await db
-    .delete(schema.timeEntry)
-    .where(
-      and(
-        eq(schema.timeEntry.businessId, businessId),
-        eq(schema.timeEntry.id, entryId),
-      ),
-    )
-    .returning();
-  return deleted ?? null;
+// Deleting an entry (#5584): `ownerId` set = the caller may only delete
+// their own entries (no time.viewAll), and someone else's looks missing.
+// Billed time (on an invoice line) is never deleted: remove the line first,
+// which returns the entry to the unbilled pool.
+export async function deleteEntry(
+  db: Db,
+  businessId: string,
+  entryId: string,
+  opts: { ownerId?: string } = {},
+) {
+  return db.transaction(async (tx) => {
+    const [entry] = await tx
+      .select({ id: schema.timeEntry.id, invoiceLineId: schema.timeEntry.invoiceLineId })
+      .from(schema.timeEntry)
+      .where(
+        and(
+          eq(schema.timeEntry.businessId, businessId),
+          eq(schema.timeEntry.id, entryId),
+          opts.ownerId ? eq(schema.timeEntry.userId, opts.ownerId) : undefined,
+        ),
+      )
+      .for("update");
+    if (!entry) return null;
+    if (entry.invoiceLineId) return "billed" as const;
+    const [deleted] = await tx
+      .delete(schema.timeEntry)
+      .where(eq(schema.timeEntry.id, entry.id))
+      .returning();
+    return deleted ?? null;
+  });
 }
